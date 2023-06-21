@@ -131,6 +131,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="disasm.c" />
     <ClCompile Include="fake6502.c" />
     <ClCompile Include="ines.c" />
     <ClCompile Include="main.c" />

@@ -30,6 +30,9 @@
     <ClCompile Include="window.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="disasm.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="fake6502.h">

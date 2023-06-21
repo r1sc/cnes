@@ -929,7 +929,7 @@ void step6502() {
 
 	(*addrtable[opcode])();
 	(*optable[opcode])();
-	clockticks6502 += ticktable[opcode];
+	clockticks6502 = ticktable[opcode];
 	if (penaltyop && penaltyaddr) clockticks6502++;
 
 	instructions++;

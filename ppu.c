@@ -1,6 +1,7 @@
 #include <stdbool.h>
 #include "ppu.h"
 #include "cartridge.h"
+#include "fake6502.h"
 
 static uint8_t OAM[256];
 
@@ -38,19 +39,8 @@ static struct {
 } PPUMASK;
 
 static uint8_t OAMADDR;
-static struct {
-	union {
-		struct {
-			uint8_t lo;
-			uint8_t hi;
-		};
-		uint16_t value;
-	};
-}PPUADDR;
 
 static bool PPUADDR_LATCH = false;
-
-static uint8_t PPUSCROLL_X, PPUSCROLL_Y;
 
 static struct {
 	union {
@@ -65,6 +55,28 @@ static struct {
 } PPUSTATUS;
 
 static uint8_t palette[32];
+
+typedef struct {
+	union {
+		struct {
+			uint8_t coarse_x_scroll : 5;
+			uint8_t coarse_y_scroll : 5;
+			union {
+				struct {
+					uint8_t horizontal_nametable : 1;
+					uint8_t vertical_nametable : 1;
+				};
+				uint8_t nametable_select;
+			};
+			uint8_t fine_y_scroll : 3;
+		};
+		uint16_t value : 15;
+	};
+} VRAM_Address_t;
+
+static VRAM_Address_t T, V;
+static uint8_t fine_x_scroll;
+
 
 void ppu_internal_bus_write(uint16_t address, uint8_t value) {
 	if (address & 0x3F00) {
@@ -98,9 +110,9 @@ uint8_t cpu_ppu_bus_read(uint8_t address) {
 			return OAM[OAMADDR];
 		case 7:
 		{
-			uint8_t value = ppu_internal_bus_read(PPUADDR.value);
+			uint8_t value = ppu_internal_bus_read(V.value);
 			uint8_t vram_address_increment = PPUCTRL.vram_address_increment ? 32 : 1;
-			PPUADDR.value += vram_address_increment;
+			V.value += vram_address_increment;
 			return value;
 		}
 	}
@@ -112,6 +124,7 @@ void cpu_ppu_bus_write(uint8_t address, uint8_t value) {
 	switch (address) {
 		case 0:
 			PPUCTRL.value = value;
+			T.nametable_select = value & 0b11;
 			break;
 		case 1:
 			PPUMASK.value = value;
@@ -125,24 +138,28 @@ void cpu_ppu_bus_write(uint8_t address, uint8_t value) {
 			break;
 		case 5:
 			if (PPUADDR_LATCH) {
-				PPUSCROLL_Y = value;
+				T.coarse_y_scroll = value >> 3;
+				T.fine_y_scroll = value & 0b111;
 			} else {
-				PPUSCROLL_X = value;
+				T.coarse_x_scroll = value >> 3;
+				fine_x_scroll = value & 0b111;
 			}
 			PPUADDR_LATCH = !PPUADDR_LATCH;
 			break;
 		case 6:
 			if (PPUADDR_LATCH) {
-				PPUADDR.lo = value;
+				T.value = T.value | value;
+				V.value = T.value;
 			} else {
-				PPUADDR.hi = value;
+				T.value = T.value | (value << 8);
+				T.value &= 0x7FFF; // Clear top bit
 			}
 			PPUADDR_LATCH = !PPUADDR_LATCH;
 			break;
 		case 7:
-			ppu_internal_bus_write(PPUADDR.value, value);
+			ppu_internal_bus_write(V.value, value);
 			uint8_t vram_address_increment = PPUCTRL.vram_address_increment ? 32 : 1;
-			PPUADDR.value += vram_address_increment;
+			V.value += vram_address_increment;
 			break;
 	}
 }
@@ -163,10 +180,93 @@ uint8_t palette_colors[192] =
 	0xAE, 0xB4, 0xE5, 0xC7, 0xB5, 0xDF, 0xE4, 0xA9, 0xA9, 0xA9, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 };
 
+uint8_t bg_shift;
+size_t scanline;
+size_t dot;
+
 /// <summary>
 /// Advances the PPU one full frame
 /// Also drives the CPU every 3rd PPU cycle
 /// </summary>
 void tick_frame() {
+	size_t cpu_timer = 0;
+	size_t tile_fetch_counter = 8;
 
+	while(scanline < 262) {
+		while (dot < 341) {
+			if (hold_cpu) return;
+
+			// Step CPU
+			if (cpu_timer == 0) {
+				step6502();
+				cpu_timer = clockticks6502 - 3;
+			} else {
+				cpu_timer--;
+			}
+
+			uint8_t bg_bit = bg_shift >> fine_x_scroll;
+			bg_shift >>= 1;
+
+			if (tile_fetch_counter == 0) {
+				bg_shift = ppu_internal_bus_read(0x2000 | (V.value & 0xFFF));
+				tile_fetch_counter = 8;
+			} else {
+				tile_fetch_counter--;
+			}
+
+			if (PPUMASK.show_background || PPUMASK.show_sprites) {
+				// Rendering enabled
+
+				if (dot == 256) {
+					// Increment vertical position in v
+					if (V.fine_y_scroll < 7) {
+						V.fine_y_scroll++;
+					} else {
+						V.fine_y_scroll = 0;
+						if (V.coarse_y_scroll == 29) {
+							V.coarse_y_scroll = 0;
+							V.vertical_nametable = !V.vertical_nametable;
+						} else if (V.coarse_y_scroll == 31) {
+							V.coarse_y_scroll = 0;
+						} else {
+							V.coarse_y_scroll++;
+						}
+					}
+
+				} else if (dot == 257) {
+					V.coarse_x_scroll = T.coarse_x_scroll;
+					V.horizontal_nametable = T.horizontal_nametable;
+				}
+
+				if (V.coarse_x_scroll == 31) {
+					V.coarse_x_scroll = 0;
+					V.horizontal_nametable = !V.horizontal_nametable;
+				} else {
+					V.coarse_x_scroll++;
+				}
+
+				if (scanline >= 0 && scanline <= 239) {
+					// Visible scanline
+
+				} else if (scanline == 261) {
+					// Pre-render scanlne
+
+					if (dot == 1) {
+						PPUSTATUS.vertical_blank_started = 0;
+						PPUSTATUS.sprite_overflow = 0;
+					}
+
+					if (dot >= 280 && dot <= 304) {
+						V.coarse_y_scroll = T.coarse_y_scroll;
+						V.vertical_nametable = T.vertical_nametable;
+						V.fine_y_scroll = T.fine_y_scroll;
+					}
+				}
+			}
+			dot++;
+		}
+		dot = 0;
+		scanline++;
+	}
+	scanline = 0;
 }

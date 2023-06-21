@@ -11,4 +11,4 @@ extern pixformat_t framebuffer[256 * 256];
 
 uint8_t cpu_ppu_bus_read(uint8_t address);
 void cpu_ppu_bus_write(uint8_t address, uint8_t value);
-void tick(size_t cycles);
+void tick_frame();

@@ -61,7 +61,9 @@ void create_window() {
 	wc.hbrBackground = (HBRUSH)(COLOR_BACKGROUND);
 	wc.lpszClassName = L"cnes";
 	wc.style = CS_OWNDC;
-	if (!RegisterClass(&wc))
-		return 1;
+	if (!RegisterClass(&wc)) {
+		exit(1);
+		return;
+	}
 	hwnd = CreateWindowW(wc.lpszClassName, L"cnes", WS_OVERLAPPEDWINDOW | WS_VISIBLE, 0, 0, 512, 512, 0, 0, hInstance, 0);
 }
