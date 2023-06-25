@@ -8,14 +8,13 @@ static uint8_t OAM[256];
 static struct {
 	union {
 		struct {
-			uint8_t nametable_address : 2;
-			uint8_t vram_address_increment : 1;
-			uint8_t sprite_pattern_table_address : 1;
-
-			uint8_t background_pattern_table_address : 1;
-			uint8_t sprite_size : 1;
-			uint8_t ppu_master_slave : 1;
-			uint8_t gen_nmi_vblank : 1;
+			unsigned int nametable_address : 2;
+			unsigned int vram_address_increment : 1;
+			unsigned int sprite_pattern_table_address : 1;
+			unsigned int background_pattern_table_address : 1;
+			unsigned int sprite_size : 1;
+			unsigned int ppu_master_slave : 1;
+			unsigned int gen_nmi_vblank : 1;
 		};
 		uint8_t value;
 	};
@@ -24,19 +23,19 @@ static struct {
 static struct {
 	union {
 		struct {
-			uint8_t greyscale : 1;
-			uint8_t show_background_left : 1;
-			uint8_t show_sprites_left : 1;
-			uint8_t show_background : 1;
-			uint8_t show_sprites : 1;
+			unsigned int greyscale : 1;
+			unsigned int show_background_left : 1;
+			unsigned int show_sprites_left : 1;
+			unsigned int show_background : 1;
+			unsigned int show_sprites : 1;
 
-			uint8_t emphasize_red : 1;
-			uint8_t emphasize_green : 1;
-			uint8_t emphasize_blue : 1;
+			unsigned int emphasize_red : 1;
+			unsigned int emphasize_green : 1;
+			unsigned int emphasize_blue : 1;
 		};
 		uint8_t value;
 	};
-} PPUMASK;
+} PPUMASK = { 0 };
 
 static uint8_t OAMADDR;
 
@@ -45,41 +44,49 @@ static bool PPUADDR_LATCH = false;
 static struct {
 	union {
 		struct {
-			uint8_t ppu_open_bus : 5;
-			uint8_t sprite_overflow : 1;
-			uint8_t sprite_0_hit : 1;
-			uint8_t vertical_blank_started : 1;
+			unsigned int ppu_open_bus : 5;
+			unsigned int sprite_overflow : 1;
+			unsigned int sprite_0_hit : 1;
+			unsigned int vertical_blank_started : 1;
 		};
 		uint8_t value;
 	};
-} PPUSTATUS;
+} PPUSTATUS = { 0 };
 
 static uint8_t palette[32];
 
 typedef struct {
 	union {
 		struct {
-			uint8_t coarse_x_scroll : 5;
-			uint8_t coarse_y_scroll : 5;
-			union {
-				struct {
-					uint8_t horizontal_nametable : 1;
-					uint8_t vertical_nametable : 1;
-				};
-				uint8_t nametable_select;
-			};
-			uint8_t fine_y_scroll : 3;
+			unsigned int coarse_x_scroll : 5;
+			unsigned int coarse_y_scroll : 5;
+			unsigned int horizontal_nametable : 1;
+			unsigned int vertical_nametable : 1;
+			unsigned int fine_y_scroll : 3;
 		};
 		uint16_t value : 15;
 	};
 } VRAM_Address_t;
+
+typedef struct {
+	union {
+		struct {
+			unsigned int fine_y_offset : 3;
+			unsigned int bit_plane : 1;
+			unsigned int tile_lo : 4;
+			unsigned int tile_hi : 4;
+			unsigned int pattern_table_half : 1;
+		};
+		uint16_t value;
+	};
+} NAMETABLE_Address_t;
 
 static VRAM_Address_t T, V;
 static uint8_t fine_x_scroll;
 
 
 void ppu_internal_bus_write(uint16_t address, uint8_t value) {
-	if (address & 0x3F00) {
+	if (address >= 0x3F00) {
 		// Palette control
 		uint8_t index = address & 3;
 		palette[index == 0 ? 0 : (address & 0x1F)] = value;
@@ -88,8 +95,8 @@ void ppu_internal_bus_write(uint16_t address, uint8_t value) {
 	}
 }
 
-uint8_t ppu_internal_bus_read(uint16_t address) {
-	if (address & 0x3F00) {
+inline uint8_t ppu_internal_bus_read(uint16_t address) {
+	if (address >= 0x3F00) {
 		// Palette control
 		uint8_t index = address & 3;
 		return palette[index == 0 ? 0 : (address & 0x1F)];
@@ -97,6 +104,7 @@ uint8_t ppu_internal_bus_read(uint16_t address) {
 	return cartridge_ppuRead(address);
 }
 
+uint8_t ppudata_buffer = 0;
 uint8_t cpu_ppu_bus_read(uint8_t address) {
 	switch (address) {
 		case 2:
@@ -110,9 +118,9 @@ uint8_t cpu_ppu_bus_read(uint8_t address) {
 			return OAM[OAMADDR];
 		case 7:
 		{
-			uint8_t value = ppu_internal_bus_read(V.value);
-			uint8_t vram_address_increment = PPUCTRL.vram_address_increment ? 32 : 1;
-			V.value += vram_address_increment;
+			uint8_t value = ppudata_buffer;
+			ppudata_buffer = ppu_internal_bus_read(V.value);
+			V.value += (PPUCTRL.vram_address_increment ? 32 : 1);
 			return value;
 		}
 	}
@@ -124,7 +132,8 @@ void cpu_ppu_bus_write(uint8_t address, uint8_t value) {
 	switch (address) {
 		case 0:
 			PPUCTRL.value = value;
-			T.nametable_select = value & 0b11;
+			T.horizontal_nametable = value & 1;
+			T.vertical_nametable = (value >> 1) & 1;
 			break;
 		case 1:
 			PPUMASK.value = value;
@@ -138,10 +147,10 @@ void cpu_ppu_bus_write(uint8_t address, uint8_t value) {
 			break;
 		case 5:
 			if (PPUADDR_LATCH) {
-				T.coarse_y_scroll = value >> 3;
+				T.coarse_y_scroll = (value >> 3) & 0b11111;
 				T.fine_y_scroll = value & 0b111;
 			} else {
-				T.coarse_x_scroll = value >> 3;
+				T.coarse_x_scroll = (value >> 3) & 0b11111;
 				fine_x_scroll = value & 0b111;
 			}
 			PPUADDR_LATCH = !PPUADDR_LATCH;
@@ -151,15 +160,14 @@ void cpu_ppu_bus_write(uint8_t address, uint8_t value) {
 				T.value = T.value | value;
 				V.value = T.value;
 			} else {
-				T.value = T.value | (value << 8);
-				T.value &= 0x7FFF; // Clear top bit
+				T.value = value << 8;
+				T.value = T.value & 0x7FFF; // Clear top bit
 			}
 			PPUADDR_LATCH = !PPUADDR_LATCH;
 			break;
 		case 7:
 			ppu_internal_bus_write(V.value, value);
-			uint8_t vram_address_increment = PPUCTRL.vram_address_increment ? 32 : 1;
-			V.value += vram_address_increment;
+			V.value += (PPUCTRL.vram_address_increment ? 32 : 1);
 			break;
 	}
 }
@@ -180,43 +188,57 @@ uint8_t palette_colors[192] =
 	0xAE, 0xB4, 0xE5, 0xC7, 0xB5, 0xDF, 0xE4, 0xA9, 0xA9, 0xA9, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 };
 
-uint8_t bg_shift;
-size_t scanline;
-size_t dot;
+uint8_t next_tile;
+uint16_t pattern_plane_0_sr;
+uint16_t pattern_plane_1_sr;
+uint8_t palette_attribute;
+uint8_t next_palette_attribute;
+NAMETABLE_Address_t nametable_address = { 0 };
+
+size_t scanline = 0;
+size_t dot = 0;
+size_t tile_fetch_counter = 0;
+size_t cpu_timer = 0;
 
 /// <summary>
 /// Advances the PPU one full frame
 /// Also drives the CPU every 3rd PPU cycle
 /// </summary>
 void tick_frame() {
-	size_t cpu_timer = 0;
-	size_t tile_fetch_counter = 8;
-
-	while(scanline < 262) {
-		while (dot < 341) {
-			if (hold_cpu) return;
+	// The PPU has 262 scanlines and 341 clocks for each scanline
+	while (scanline <= 261) {
+		tile_fetch_counter = 8;
+		while (dot <= 340) {
+			if (hold_clock) return;
 
 			// Step CPU
 			if (cpu_timer == 0) {
 				step6502();
-				cpu_timer = clockticks6502 - 3;
+				cpu_timer = clockticks6502 * 3 - 1;
 			} else {
 				cpu_timer--;
 			}
 
-			uint8_t bg_bit = bg_shift >> fine_x_scroll;
-			bg_shift >>= 1;
+			bool rendering_enabled = PPUMASK.show_background || PPUMASK.show_sprites;
+			bool visible_pixel = rendering_enabled && scanline < 240 && dot < 256;
+			bool fetch_data = rendering_enabled && (scanline < 240 || scanline == 261);
 
-			if (tile_fetch_counter == 0) {
-				bg_shift = ppu_internal_bus_read(0x2000 | (V.value & 0xFFF));
-				tile_fetch_counter = 8;
-			} else {
-				tile_fetch_counter--;
+			if (visible_pixel) {
+				uint8_t bg_bit_0 = ((pattern_plane_0_sr >> fine_x_scroll) >> 7) & 1;
+				uint8_t bg_bit_1 = ((pattern_plane_1_sr >> fine_x_scroll) >> 7) & 1;
+				uint8_t attrib_bits = palette_attribute & 0b11;
+
+				uint8_t palette_index = ppu_internal_bus_read((uint16_t)(0x3F00 | (1 << 4) | (attrib_bits << 2) | (bg_bit_1 << 1) | bg_bit_0));
+				pixformat_t* pixel = &framebuffer[scanline * 256 + dot];
+				pixel->r = palette_colors[palette_index * 3];
+				pixel->g = palette_colors[palette_index * 3 + 1];
+				pixel->b = palette_colors[palette_index * 3 + 2];
+
+				pattern_plane_0_sr = pattern_plane_0_sr << 1;
+				pattern_plane_1_sr = pattern_plane_1_sr << 1;
 			}
 
-			if (PPUMASK.show_background || PPUMASK.show_sprites) {
-				// Rendering enabled
-
+			if (fetch_data) {
 				if (dot == 256) {
 					// Increment vertical position in v
 					if (V.fine_y_scroll < 7) {
@@ -232,35 +254,59 @@ void tick_frame() {
 							V.coarse_y_scroll++;
 						}
 					}
+				}
+
+				if (dot <= 256 || dot >= 321) {
+
+					// Nametable && attribute fetch
+					if (tile_fetch_counter == 8) {
+						next_tile = ppu_internal_bus_read(0x2000 | (V.value & 0xFFF));
+						next_palette_attribute = ppu_internal_bus_read(0x23C0 | (V.value & 0x0C00) | ((V.value >> 4) & 0x38) | ((V.value >> 2) & 0x07));
+
+						nametable_address.fine_y_offset = V.fine_y_scroll;
+						nametable_address.bit_plane = 0;
+						nametable_address.tile_lo = next_tile & 0xF;
+						nametable_address.tile_hi = (next_tile >> 4) & 0xF;
+						nametable_address.pattern_table_half = PPUCTRL.background_pattern_table_address;
+						pattern_plane_0_sr |= ppu_internal_bus_read(nametable_address.value);
+
+						nametable_address.bit_plane = 1;
+						pattern_plane_1_sr |= ppu_internal_bus_read(nametable_address.value);
+
+						// Inc(horiz)
+						if (V.coarse_x_scroll == 31) { // if coarse X == 31
+							V.coarse_x_scroll = 0;
+							V.horizontal_nametable = !V.horizontal_nametable; // switch horizontal nametable
+						} else {
+							V.coarse_x_scroll += 1;                // increment coarse X
+						}
+						tile_fetch_counter = 0;
+
+						palette_attribute = next_palette_attribute;
+					} else {
+						tile_fetch_counter++;
+					}
 
 				} else if (dot == 257) {
-					V.coarse_x_scroll = T.coarse_x_scroll;
 					V.horizontal_nametable = T.horizontal_nametable;
+					V.coarse_x_scroll = T.coarse_x_scroll;
 				}
 
-				if (V.coarse_x_scroll == 31) {
-					V.coarse_x_scroll = 0;
-					V.horizontal_nametable = !V.horizontal_nametable;
-				} else {
-					V.coarse_x_scroll++;
-				}
-
-				if (scanline >= 0 && scanline <= 239) {
-					// Visible scanline
-
-				} else if (scanline == 261) {
-					// Pre-render scanlne
-
+				if (scanline == 261) {
 					if (dot == 1) {
 						PPUSTATUS.vertical_blank_started = 0;
-						PPUSTATUS.sprite_overflow = 0;
-					}
-
-					if (dot >= 280 && dot <= 304) {
+					} else if (dot >= 280 && dot <= 304) {
 						V.coarse_y_scroll = T.coarse_y_scroll;
-						V.vertical_nametable = T.vertical_nametable;
 						V.fine_y_scroll = T.fine_y_scroll;
+						V.vertical_nametable = T.vertical_nametable;
 					}
+				}
+			}
+
+			if (scanline == 241 && dot == 1) {
+				PPUSTATUS.vertical_blank_started = 1;
+				if (PPUCTRL.gen_nmi_vblank) {
+					nmi6502();
 				}
 			}
 			dot++;

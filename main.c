@@ -68,6 +68,7 @@ void write6502(uint16_t address, uint8_t value) {
 }
 
 pixformat_t framebuffer[256 * 256];
+bool hold_clock = false;
 
 void main() {
 	read_ines("donkey kong.nes", &ines);
@@ -102,17 +103,24 @@ void main() {
 
 			if (msg.message == WM_QUIT) {
 				running = false;
+			} else if (msg.message == WM_SIZE) {
+				UINT width = LOWORD(msg.lParam);
+				UINT height = HIWORD(msg.lParam);
+				glViewport(0,0,width, height);
 			}
 		}
+
+		tick_frame();
 
 		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 256, GL_RGB, GL_UNSIGNED_BYTE, framebuffer);
 
 		glBegin(GL_QUADS);
-		glTexCoord2i(0, 0); glVertex2i(-1, -1);
-		glTexCoord2i(1, 0); glVertex2i(1, -1);
-		glTexCoord2i(1, 1); glVertex2i(1, 1);
-		glTexCoord2i(0, 1); glVertex2i(-1, 1);
+		glTexCoord2i(0, 0); glVertex2i(-1, 1);
+		glTexCoord2i(1, 0); glVertex2i(1, 1);
+		glTexCoord2i(1, 1); glVertex2i(1, -1);
+		glTexCoord2i(0, 1); glVertex2i(-1, -1);
 		glEnd();
+
 
 		SwapBuffers(window_dc);
 		Sleep(0);

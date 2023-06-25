@@ -4,7 +4,7 @@
 #include "bit.h"
 
 static inline uint16_t nrom_ppu_addr_to_ciram_addr(uint16_t ppuaddr) {
-	uint16_t ciram_address = (ppuaddr & 0x3FF) | ((ppuaddr >> ines.ppuaddress_ciram_a10_shift_count) << 10);
+	uint16_t ciram_address = (ppuaddr & 0x3FF) | (((ppuaddr >> ines.ppuaddress_ciram_a10_shift_count) & 1) << 10);
 	return ciram_address;
 }
 
