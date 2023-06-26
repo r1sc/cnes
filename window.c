@@ -47,6 +47,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 			PostQuitMessage(0);
 		}
 		break;
+		case WM_SIZE:
+		{
+			UINT width = LOWORD(lParam);
+			UINT height = HIWORD(lParam);
+			glViewport(0, 0, width, height);
+		}
+		break;
 		default:
 			return DefWindowProc(hWnd, message, wParam, lParam);
 	}
@@ -65,5 +72,8 @@ void create_window() {
 		exit(1);
 		return;
 	}
-	hwnd = CreateWindowW(wc.lpszClassName, L"cnes", WS_OVERLAPPEDWINDOW | WS_VISIBLE, 0, 0, 512, 512, 0, 0, hInstance, 0);
+	RECT rect = { 0, 0, 512, 512 };
+	AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, false);
+
+	hwnd = CreateWindowW(wc.lpszClassName, L"cnes", WS_OVERLAPPEDWINDOW | WS_VISIBLE, 0, 0, rect.right - rect.left, rect.bottom - rect.top, 0, 0, hInstance, 0);
 }

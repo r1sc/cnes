@@ -142,8 +142,7 @@ void cpu_ppu_bus_write(uint8_t address, uint8_t value) {
 			OAMADDR = value;
 			break;
 		case 4:
-			OAM[OAMADDR] = value;
-			OAMADDR++;
+			OAM[OAMADDR++] = value;
 			break;
 		case 5:
 			if (PPUADDR_LATCH) {
@@ -157,10 +156,12 @@ void cpu_ppu_bus_write(uint8_t address, uint8_t value) {
 			break;
 		case 6:
 			if (PPUADDR_LATCH) {
-				T.value = T.value | value;
+				T.value = (T.value & 0xFF00) | value;
 				V.value = T.value;
 			} else {
-				T.value = value << 8;
+				uint16_t temp = value & 0x7F;
+				temp <<= 8;
+				T.value = temp | (T.value & 0xFF);
 				T.value = T.value & 0x7FFF; // Clear top bit
 			}
 			PPUADDR_LATCH = !PPUADDR_LATCH;
@@ -207,7 +208,7 @@ size_t cpu_timer = 0;
 void tick_frame() {
 	// The PPU has 262 scanlines and 341 clocks for each scanline
 	while (scanline <= 261) {
-		tile_fetch_counter = 8;
+		tile_fetch_counter = 0;
 		while (dot <= 340) {
 			if (hold_clock) return;
 
@@ -226,9 +227,14 @@ void tick_frame() {
 			if (visible_pixel) {
 				uint8_t bg_bit_0 = ((pattern_plane_0_sr >> fine_x_scroll) >> 7) & 1;
 				uint8_t bg_bit_1 = ((pattern_plane_1_sr >> fine_x_scroll) >> 7) & 1;
-				uint8_t attrib_bits = palette_attribute & 0b11;
+				bool shift_one = ((V.coarse_x_scroll >> 4) & 1) == 1;
 
-				uint8_t palette_index = ppu_internal_bus_read((uint16_t)(0x3F00 | (1 << 4) | (attrib_bits << 2) | (bg_bit_1 << 1) | bg_bit_0));
+				uint8_t attr = palette_attribute;
+				if ((V.coarse_y_scroll & 2) == 2) attr = attr >> 4;
+				if ((V.coarse_x_scroll & 2) == 2) attr = attr >> 2;
+				attr = (attr & 0b11);
+
+				uint8_t palette_index = ppu_internal_bus_read((uint16_t)(0x3F00 | (attr << 2) | (bg_bit_1 << 1) | bg_bit_0));
 				pixformat_t* pixel = &framebuffer[scanline * 256 + dot];
 				pixel->r = palette_colors[palette_index * 3];
 				pixel->g = palette_colors[palette_index * 3 + 1];
@@ -259,7 +265,7 @@ void tick_frame() {
 				if (dot <= 256 || dot >= 321) {
 
 					// Nametable && attribute fetch
-					if (tile_fetch_counter == 8) {
+					if (tile_fetch_counter == 7) {
 						next_tile = ppu_internal_bus_read(0x2000 | (V.value & 0xFFF));
 						next_palette_attribute = ppu_internal_bus_read(0x23C0 | (V.value & 0x0C00) | ((V.value >> 4) & 0x38) | ((V.value >> 2) & 0x07));
 

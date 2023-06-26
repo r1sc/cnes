@@ -23,6 +23,11 @@ uint8_t ciram[2048];
 uint8_t cpuram[2048];
 
 uint8_t read6502(uint16_t address) {
+	if (address >= 0x4000 && address <= 0x401f) {
+		// APU
+		return 0;
+	}
+
 	bool cpu_a15 = (address & BIT_15) != 0;
 	bool cpu_a14 = (address & BIT_14) != 0;
 	bool cpu_a13 = (address & BIT_13) != 0;
@@ -41,12 +46,16 @@ uint8_t read6502(uint16_t address) {
 }
 
 void write6502(uint16_t address, uint8_t value) {
+
+
 	if (address == 0x4014) {
 		// DMA
 		uint16_t page = value << 8;
 		for (uint16_t i = 0; i < 256; i++) {
 			cpu_ppu_bus_write(4, read6502(page | i));
 		}
+	} else if (address >= 0x4000 && address <= 0x401f) {
+		return;
 	} else {
 		bool cpu_a15 = (address & BIT_15) != 0;
 		bool cpu_a14 = (address & BIT_14) != 0;
@@ -88,8 +97,8 @@ void main() {
 	GLuint texture;
 	glGenTextures(1, &texture);
 	glBindTexture(GL_TEXTURE_2D, texture);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 256, 256, 0, GL_RGB, GL_UNSIGNED_BYTE, framebuffer);
@@ -103,10 +112,6 @@ void main() {
 
 			if (msg.message == WM_QUIT) {
 				running = false;
-			} else if (msg.message == WM_SIZE) {
-				UINT width = LOWORD(msg.lParam);
-				UINT height = HIWORD(msg.lParam);
-				glViewport(0,0,width, height);
 			}
 		}
 
