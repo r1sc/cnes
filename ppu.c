@@ -5,83 +5,74 @@
 
 static uint8_t OAM[256];
 
-static struct {
-	union {
-		struct {
-			unsigned int nametable_address : 2;
-			unsigned int vram_address_increment : 1;
-			unsigned int sprite_pattern_table_address : 1;
-			unsigned int background_pattern_table_address : 1;
-			unsigned int sprite_size : 1;
-			unsigned int ppu_master_slave : 1;
-			unsigned int gen_nmi_vblank : 1;
-		};
-		uint8_t value;
+union {
+	struct {
+		unsigned int nametable_address : 2;
+		unsigned int vram_address_increment : 1;
+		unsigned int sprite_pattern_table_address : 1;
+		unsigned int background_pattern_table_address : 1;
+		unsigned int sprite_size : 1;
+		unsigned int ppu_master_slave : 1;
+		unsigned int gen_nmi_vblank : 1;
 	};
+	uint8_t value;
 } PPUCTRL = { 0 };
 
-static struct {
-	union {
-		struct {
-			unsigned int greyscale : 1;
-			unsigned int show_background_left : 1;
-			unsigned int show_sprites_left : 1;
-			unsigned int show_background : 1;
-			unsigned int show_sprites : 1;
+union {
+	struct {
+		unsigned int greyscale : 1;
+		unsigned int show_background_left : 1;
+		unsigned int show_sprites_left : 1;
+		unsigned int show_background : 1;
+		unsigned int show_sprites : 1;
 
-			unsigned int emphasize_red : 1;
-			unsigned int emphasize_green : 1;
-			unsigned int emphasize_blue : 1;
-		};
-		uint8_t value;
+		unsigned int emphasize_red : 1;
+		unsigned int emphasize_green : 1;
+		unsigned int emphasize_blue : 1;
 	};
+	uint8_t value;
 } PPUMASK = { 0 };
 
 static uint8_t OAMADDR;
 
 static bool PPUADDR_LATCH = false;
 
-static struct {
-	union {
-		struct {
-			unsigned int ppu_open_bus : 5;
-			unsigned int sprite_overflow : 1;
-			unsigned int sprite_0_hit : 1;
-			unsigned int vertical_blank_started : 1;
-		};
-		uint8_t value;
+union {
+	struct {
+		unsigned int ppu_open_bus : 5;
+		unsigned int sprite_overflow : 1;
+		unsigned int sprite_0_hit : 1;
+		unsigned int vertical_blank_started : 1;
 	};
+	uint8_t value;
 } PPUSTATUS = { 0 };
 
 static uint8_t palette[32];
 
-typedef struct {
-	union {
-		struct {
-			unsigned int coarse_x_scroll : 5;
-			unsigned int coarse_y_scroll : 5;
-			unsigned int horizontal_nametable : 1;
-			unsigned int vertical_nametable : 1;
-			unsigned int fine_y_scroll : 3;
-		};
-		uint16_t value : 15;
+
+typedef union {
+	struct {
+		unsigned int coarse_x_scroll : 5;
+		unsigned int coarse_y_scroll : 5;
+		unsigned int horizontal_nametable : 1;
+		unsigned int vertical_nametable : 1;
+		unsigned int fine_y_scroll : 3;
 	};
+	uint16_t value : 15;
 } VRAM_Address_t;
 
-typedef struct {
-	union {
-		struct {
-			unsigned int fine_y_offset : 3;
-			unsigned int bit_plane : 1;
-			unsigned int tile_lo : 4;
-			unsigned int tile_hi : 4;
-			unsigned int pattern_table_half : 1;
-		};
-		uint16_t value;
+typedef union {
+	struct {
+		unsigned int fine_y_offset : 3;
+		unsigned int bit_plane : 1;
+		unsigned int tile_lo : 4;
+		unsigned int tile_hi : 4;
+		unsigned int pattern_table_half : 1;
 	};
+	uint16_t value;
 } NAMETABLE_Address_t;
 
-static VRAM_Address_t T, V;
+VRAM_Address_t T, V;
 static uint8_t fine_x_scroll;
 
 
@@ -106,26 +97,28 @@ inline uint8_t ppu_internal_bus_read(uint16_t address) {
 
 uint8_t ppudata_buffer = 0;
 uint8_t cpu_ppu_bus_read(uint8_t address) {
+	uint8_t value = 0;
+
 	switch (address) {
 		case 2:
-		{
-			uint8_t status = PPUSTATUS.value;
-			PPUSTATUS.vertical_blank_started = 0; // Clear vblank (bit 7)
+			value = PPUSTATUS.value;
+			PPUSTATUS.vertical_blank_started = 0;
 			PPUADDR_LATCH = false;
-			return status;
-		}
+			break;
 		case 4:
-			return OAM[OAMADDR];
+			value = OAM[OAMADDR];
+			break;
 		case 7:
-		{
-			uint8_t value = ppudata_buffer;
+			value = ppudata_buffer;
 			ppudata_buffer = ppu_internal_bus_read(V.value);
+
+			if (V.value >= 0x3f00) value = ppudata_buffer; // Do not delay palette reads
+
 			V.value += (PPUCTRL.vram_address_increment ? 32 : 1);
-			return value;
-		}
+			break;
 	}
 
-	return 0;
+	return value;
 }
 
 void cpu_ppu_bus_write(uint8_t address, uint8_t value) {
@@ -167,7 +160,7 @@ void cpu_ppu_bus_write(uint8_t address, uint8_t value) {
 			PPUADDR_LATCH = !PPUADDR_LATCH;
 			break;
 		case 7:
-			ppu_internal_bus_write(V.value, value);
+			ppu_internal_bus_write(V.value & 0x3FFF, value);
 			V.value += (PPUCTRL.vram_address_increment ? 32 : 1);
 			break;
 	}
@@ -190,135 +183,192 @@ uint8_t palette_colors[192] =
 };
 
 uint8_t next_tile;
-uint16_t pattern_plane_0_sr;
-uint16_t pattern_plane_1_sr;
-uint8_t palette_attribute;
-uint8_t next_palette_attribute;
+uint16_t pattern_plane_0, pattern_plane_1;
+uint16_t attrib_0, attrib_1;
+uint8_t next_attribute;
+uint8_t next_pattern_lsb, next_pattern_msb;
+
 NAMETABLE_Address_t nametable_address = { 0 };
 
-size_t scanline = 0;
+int scanline = 0;
 size_t dot = 0;
-size_t tile_fetch_counter = 0;
+
+inline void nametable_fetch() {
+	next_tile = ppu_internal_bus_read(0x2000 | (V.value & 0x0FFF));
+}
+
+inline void attribute_fetch() {
+	next_attribute = ppu_internal_bus_read(0x23C0 | (V.value & 0x0C00) | ((V.value >> 4) & 0x38) | ((V.value >> 2) & 0x07));
+	if (V.coarse_y_scroll & 2) next_attribute >>= 4;
+	if (V.coarse_x_scroll & 2) next_attribute >>= 2;
+	next_attribute &= 0b11;
+}
+
+inline void bg_lsb_fetch() {
+	nametable_address.fine_y_offset = V.fine_y_scroll;
+	nametable_address.bit_plane = 0;
+	nametable_address.tile_lo = next_tile & 0xF;
+	nametable_address.tile_hi = (next_tile >> 4) & 0xF;
+	nametable_address.pattern_table_half = PPUCTRL.background_pattern_table_address;
+	next_pattern_lsb = ppu_internal_bus_read(nametable_address.value);
+}
+
+inline void bg_msb_fetch() {
+	nametable_address.bit_plane = 1;
+	next_pattern_msb = ppu_internal_bus_read(nametable_address.value);
+}
+
+inline void inc_horiz() {
+	if (!PPUMASK.show_background && !PPUMASK.show_sprites)
+		return;
+
+	if (V.coarse_x_scroll == 31) {
+		V.coarse_x_scroll = 0;
+		V.horizontal_nametable = ~V.horizontal_nametable;
+	} else {
+		V.coarse_x_scroll++;
+	}
+}
+
+inline void inc_vert() {
+	if (!PPUMASK.show_background && !PPUMASK.show_sprites) 
+		return;
+
+	if (V.fine_y_scroll < 7) {
+		V.fine_y_scroll++;
+	} else {
+		V.fine_y_scroll = 0;
+		if (V.coarse_y_scroll == 29) {
+			V.coarse_y_scroll = 0;
+			V.vertical_nametable = ~V.vertical_nametable;
+		} else if (V.coarse_y_scroll == 31) {
+			V.coarse_y_scroll = 0;
+		} else {
+			V.coarse_y_scroll++;
+		}
+	}
+}
+
+inline void load_shifters() {
+	pattern_plane_0 |= next_pattern_lsb;
+	pattern_plane_1 |= next_pattern_msb;
+
+	attrib_0 |= ((next_attribute & 1) ? 0xFF : 0);
+	attrib_1 |= ((next_attribute & 2) ? 0xFF : 0);
+}
+
+void tick() {
+
+	if (scanline <= 239) {
+
+		if (PPUMASK.show_sprites && scanline == OAM[0] && dot == OAM[3]) {
+			PPUSTATUS.sprite_0_hit = 1;
+		}
+
+		if (scanline == -1 && dot == 1) {
+			PPUSTATUS.vertical_blank_started = 0;
+			PPUSTATUS.sprite_overflow = 0;
+			PPUSTATUS.sprite_0_hit = 0;
+		}
+
+
+		if ((dot >= 2 && dot < 258) || (dot >= 321 && dot < 338)) {
+			if (PPUMASK.show_background) {
+				pattern_plane_0 <<= 1;
+				pattern_plane_1 <<= 1;
+				attrib_0 <<= 1;
+				attrib_1 <<= 1;
+			}
+
+			switch ((dot - 1) % 8) {
+				case 0:
+					load_shifters();
+					nametable_fetch();
+					break;
+				case 2:
+					attribute_fetch();
+					break;
+				case 4:
+					bg_lsb_fetch();
+					break;
+				case 6:
+					bg_msb_fetch();
+					break;
+				case 7:
+					inc_horiz();
+					break;
+			}
+
+
+		}
+
+		if (dot == 256) {
+			inc_vert();
+		}
+
+		if (dot == 257) {
+			load_shifters();
+
+			if (PPUMASK.show_background || PPUMASK.show_sprites) {
+				V.horizontal_nametable = T.horizontal_nametable;
+				V.coarse_x_scroll = T.coarse_x_scroll;
+			}
+		}
+
+		if (dot == 338 || dot == 340) {
+			nametable_fetch();
+		}
+
+		if (PPUMASK.show_background && scanline == -1 && dot >= 280 && dot <= 304) {
+			V.coarse_y_scroll = T.coarse_y_scroll;
+			V.fine_y_scroll = T.fine_y_scroll;
+			V.vertical_nametable = T.vertical_nametable;
+		}
+
+		if (PPUMASK.show_background && scanline >= 0 && dot >= 1 && dot <= 256) {
+			uint16_t bit = 0x8000 >> fine_x_scroll;
+
+			uint8_t lo_bit = (pattern_plane_0 & bit) == bit ? 1 : 0;
+			uint8_t hi_bit = (pattern_plane_1 & bit) == bit ? 1 : 0;
+
+			uint8_t attr_lo = (attrib_0 & bit) == bit ? 1 : 0;
+			uint8_t attr_hi = (attrib_1 & bit) == bit ? 1 : 0;
+
+			uint8_t palette = ppu_internal_bus_read((uint16_t)(0x3F00 | (attr_hi << 3) | (attr_lo << 2) | (hi_bit << 1) | lo_bit));
+
+			pixformat_t* pixel = &framebuffer[(size_t)256 * scanline + (dot - 1)];
+			pixel->r = palette_colors[palette * 3 + 0];
+			pixel->g = palette_colors[palette * 3 + 1];
+			pixel->b = palette_colors[palette * 3 + 2];
+		}
+
+	}
+
+	if (scanline == 241 && dot == 1) {
+		PPUSTATUS.vertical_blank_started = 1;
+		if (PPUCTRL.gen_nmi_vblank) {
+			nmi6502();
+		}
+	}
+}
+
 size_t cpu_timer = 0;
 
-/// <summary>
-/// Advances the PPU one full frame
-/// Also drives the CPU every 3rd PPU cycle
-/// </summary>
 void tick_frame() {
-	// The PPU has 262 scanlines and 341 clocks for each scanline
-	while (scanline <= 261) {
-		tile_fetch_counter = 0;
+	scanline = -1;
+	while (scanline <= 260) {
+		dot = 0;
 		while (dot <= 340) {
-			if (hold_clock) return;
-
-			// Step CPU
 			if (cpu_timer == 0) {
 				step6502();
-				cpu_timer = clockticks6502 * 3 - 1;
+				cpu_timer = clockticks6502 * 3;
 			} else {
 				cpu_timer--;
 			}
 
-			bool rendering_enabled = PPUMASK.show_background || PPUMASK.show_sprites;
-			bool visible_pixel = rendering_enabled && scanline < 240 && dot < 256;
-			bool fetch_data = rendering_enabled && (scanline < 240 || scanline == 261);
-
-			if (visible_pixel) {
-				uint8_t bg_bit_0 = ((pattern_plane_0_sr >> fine_x_scroll) >> 7) & 1;
-				uint8_t bg_bit_1 = ((pattern_plane_1_sr >> fine_x_scroll) >> 7) & 1;
-				bool shift_one = ((V.coarse_x_scroll >> 4) & 1) == 1;
-
-				uint8_t attr = palette_attribute;
-				if ((V.coarse_y_scroll & 2) == 2) attr = attr >> 4;
-				if ((V.coarse_x_scroll & 2) == 2) attr = attr >> 2;
-				attr = (attr & 0b11);
-
-				uint8_t palette_index = ppu_internal_bus_read((uint16_t)(0x3F00 | (attr << 2) | (bg_bit_1 << 1) | bg_bit_0));
-				pixformat_t* pixel = &framebuffer[scanline * 256 + dot];
-				pixel->r = palette_colors[palette_index * 3];
-				pixel->g = palette_colors[palette_index * 3 + 1];
-				pixel->b = palette_colors[palette_index * 3 + 2];
-
-				pattern_plane_0_sr = pattern_plane_0_sr << 1;
-				pattern_plane_1_sr = pattern_plane_1_sr << 1;
-			}
-
-			if (fetch_data) {
-				if (dot == 256) {
-					// Increment vertical position in v
-					if (V.fine_y_scroll < 7) {
-						V.fine_y_scroll++;
-					} else {
-						V.fine_y_scroll = 0;
-						if (V.coarse_y_scroll == 29) {
-							V.coarse_y_scroll = 0;
-							V.vertical_nametable = !V.vertical_nametable;
-						} else if (V.coarse_y_scroll == 31) {
-							V.coarse_y_scroll = 0;
-						} else {
-							V.coarse_y_scroll++;
-						}
-					}
-				}
-
-				if (dot <= 256 || dot >= 321) {
-
-					// Nametable && attribute fetch
-					if (tile_fetch_counter == 7) {
-						next_tile = ppu_internal_bus_read(0x2000 | (V.value & 0xFFF));
-						next_palette_attribute = ppu_internal_bus_read(0x23C0 | (V.value & 0x0C00) | ((V.value >> 4) & 0x38) | ((V.value >> 2) & 0x07));
-
-						nametable_address.fine_y_offset = V.fine_y_scroll;
-						nametable_address.bit_plane = 0;
-						nametable_address.tile_lo = next_tile & 0xF;
-						nametable_address.tile_hi = (next_tile >> 4) & 0xF;
-						nametable_address.pattern_table_half = PPUCTRL.background_pattern_table_address;
-						pattern_plane_0_sr |= ppu_internal_bus_read(nametable_address.value);
-
-						nametable_address.bit_plane = 1;
-						pattern_plane_1_sr |= ppu_internal_bus_read(nametable_address.value);
-
-						// Inc(horiz)
-						if (V.coarse_x_scroll == 31) { // if coarse X == 31
-							V.coarse_x_scroll = 0;
-							V.horizontal_nametable = !V.horizontal_nametable; // switch horizontal nametable
-						} else {
-							V.coarse_x_scroll += 1;                // increment coarse X
-						}
-						tile_fetch_counter = 0;
-
-						palette_attribute = next_palette_attribute;
-					} else {
-						tile_fetch_counter++;
-					}
-
-				} else if (dot == 257) {
-					V.horizontal_nametable = T.horizontal_nametable;
-					V.coarse_x_scroll = T.coarse_x_scroll;
-				}
-
-				if (scanline == 261) {
-					if (dot == 1) {
-						PPUSTATUS.vertical_blank_started = 0;
-					} else if (dot >= 280 && dot <= 304) {
-						V.coarse_y_scroll = T.coarse_y_scroll;
-						V.fine_y_scroll = T.fine_y_scroll;
-						V.vertical_nametable = T.vertical_nametable;
-					}
-				}
-			}
-
-			if (scanline == 241 && dot == 1) {
-				PPUSTATUS.vertical_blank_started = 1;
-				if (PPUCTRL.gen_nmi_vblank) {
-					nmi6502();
-				}
-			}
+			tick();
 			dot++;
 		}
-		dot = 0;
 		scanline++;
 	}
-	scanline = 0;
 }

@@ -171,7 +171,6 @@ uint8_t sp, a, x, y, status;
 
 
 //helper variables
-uint32_t instructions = 0; //keep track of total instructions executed
 size_t clockticks6502 = 0;
 uint16_t oldpc, ea, reladdr, value, result;
 uint8_t opcode, oldstatus;
@@ -931,6 +930,20 @@ void step6502() {
 	(*optable[opcode])();
 	clockticks6502 = ticktable[opcode];
 	if (penaltyop && penaltyaddr) clockticks6502++;
+}
 
-	instructions++;
+void run6502(size_t num_clocks) {
+	size_t total_clocks = 0;
+	while (total_clocks < num_clocks) {
+		opcode = read6502(pc++);
+		status |= FLAG_CONSTANT;
+
+		penaltyop = 0;
+		penaltyaddr = 0;
+
+		(*addrtable[opcode])();
+		(*optable[opcode])();
+		total_clocks += ticktable[opcode];
+		if (penaltyop && penaltyaddr) total_clocks++;
+	}
 }

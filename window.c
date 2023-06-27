@@ -66,7 +66,7 @@ void create_window() {
 	wc.lpfnWndProc = WndProc;
 	wc.hInstance = hInstance;
 	wc.hbrBackground = (HBRUSH)(COLOR_BACKGROUND);
-	wc.lpszClassName = L"cnes";
+	wc.lpszClassName = "cnes";
 	wc.style = CS_OWNDC;
 	if (!RegisterClass(&wc)) {
 		exit(1);
@@ -75,5 +75,5 @@ void create_window() {
 	RECT rect = { 0, 0, 512, 512 };
 	AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, false);
 
-	hwnd = CreateWindowW(wc.lpszClassName, L"cnes", WS_OVERLAPPEDWINDOW | WS_VISIBLE, 0, 0, rect.right - rect.left, rect.bottom - rect.top, 0, 0, hInstance, 0);
+	hwnd = CreateWindow(wc.lpszClassName, "cnes", WS_OVERLAPPEDWINDOW | WS_VISIBLE, 0, 0, rect.right - rect.left, rect.bottom - rect.top, 0, 0, hInstance, 0);
 }

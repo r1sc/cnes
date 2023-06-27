@@ -3,7 +3,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <gl/GL.h>
-#include <dwmapi.h>
+#include <GLFW/glfw3.h>
 
 #include "window.h"
 #include "fake6502.h"
@@ -80,7 +80,7 @@ pixformat_t framebuffer[256 * 256];
 bool hold_clock = false;
 
 void main() {
-	read_ines("donkey kong.nes", &ines);
+	read_ines("excitebike.nes", &ines);
 
 	cartridge_cpuRead = nrom_cpuRead;
 	cartridge_cpuWrite = nrom_cpuWrite;
@@ -89,8 +89,11 @@ void main() {
 
 	reset6502();
 
-	create_window();
-	ShowWindow(hwnd, SW_SHOW);
+	glfwInit();
+	GLFWwindow* window = glfwCreateWindow(512, 512, "cnes", NULL, NULL);
+	glfwMakeContextCurrent(window);
+	//create_window();
+	//ShowWindow(hwnd, SW_SHOW);
 
 	glEnable(GL_TEXTURE_2D);
 
@@ -103,18 +106,8 @@ void main() {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 256, 256, 0, GL_RGB, GL_UNSIGNED_BYTE, framebuffer);
 
-	MSG msg;
-	bool running = true;
-	while (running) {
-		while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
-			TranslateMessage(&msg);
-			DispatchMessage(&msg);
-
-			if (msg.message == WM_QUIT) {
-				running = false;
-			}
-		}
-
+	while (!glfwWindowShouldClose(window)) {
+		
 		tick_frame();
 
 		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 256, GL_RGB, GL_UNSIGNED_BYTE, framebuffer);
@@ -126,12 +119,13 @@ void main() {
 		glTexCoord2i(0, 1); glVertex2i(-1, -1);
 		glEnd();
 
+		/* Swap front and back buffers */
+		glfwSwapBuffers(window);
 
-		SwapBuffers(window_dc);
-		Sleep(0);
+		/* Poll for and process events */
+		glfwPollEvents();
 	}
-
-	step6502();
+	glfwTerminate();
 
 	free_ines(&ines);
 }
