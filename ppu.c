@@ -79,7 +79,7 @@ static uint8_t fine_x_scroll;
 void ppu_internal_bus_write(uint16_t address, uint8_t value) {
 	if (address >= 0x3F00) {
 		// Palette control
-		uint8_t index = address & 3;
+		uint8_t index = address & 0xF;
 		palette[index == 0 ? 0 : (address & 0x1F)] = value;
 	} else {
 		cartridge_ppuWrite(address, value);
@@ -89,7 +89,7 @@ void ppu_internal_bus_write(uint16_t address, uint8_t value) {
 inline uint8_t ppu_internal_bus_read(uint16_t address) {
 	if (address >= 0x3F00) {
 		// Palette control
-		uint8_t index = address & 3;
+		uint8_t index = address & 0xF;
 		return palette[index == 0 ? 0 : (address & 0x1F)];
 	}
 	return cartridge_ppuRead(address);

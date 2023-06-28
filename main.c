@@ -12,6 +12,7 @@
 #include "cartridge.h"
 #include "bit.h"
 #include "NROM.h"
+#include "disasm.h"
 
 bus_read_t cartridge_cpuRead;
 bus_write_t cartridge_cpuWrite;
@@ -34,20 +35,20 @@ uint8_t read6502(uint16_t address) {
 	bool phase2 = true;
 
 	bool romsel = cpu_a15 && phase2;
-	bool ppu_cs = !cpu_a14 && cpu_a13;
-	bool cpu_ram_cs = !cpu_a14 && !cpu_a13;
+	if (!romsel) {
+		bool ppu_cs = !cpu_a14 && cpu_a13;
+		bool cpu_ram_cs = !cpu_a14 && !cpu_a13;
 
-	if (ppu_cs) {
-		return cpu_ppu_bus_read(address & 7);
-	} else if (cpu_ram_cs) {
-		return cpuram[address & 0x7FF];
+		if (ppu_cs) {
+			return cpu_ppu_bus_read(address & 7);
+		} else if (cpu_ram_cs) {
+			return cpuram[address & 0x7FF];
+		}
 	}
 	return cartridge_cpuRead(address);
 }
 
 void write6502(uint16_t address, uint8_t value) {
-
-
 	if (address == 0x4014) {
 		// DMA
 		uint16_t page = value << 8;
@@ -63,14 +64,17 @@ void write6502(uint16_t address, uint8_t value) {
 		bool phase2 = true;
 
 		bool romsel = cpu_a15 && phase2;
-		bool ppu_cs = !cpu_a14 && cpu_a13;
-		bool cpu_ram_cs = !cpu_a14 && !cpu_a13;
+		if (!romsel) {
+			bool ppu_cs = !cpu_a14 && cpu_a13;
+			bool cpu_ram_cs = !cpu_a14 && !cpu_a13;
 
-		if (ppu_cs) {
-			cpu_ppu_bus_write(address & 7, value);
-		} else if (cpu_ram_cs) {
-			cpuram[address & 0x7FF] = value;
-		} else {
+			if (ppu_cs) {
+				cpu_ppu_bus_write(address & 7, value);
+			} else if (cpu_ram_cs) {
+				cpuram[address & 0x7FF] = value;
+			}
+		}
+		else {
 			cartridge_cpuWrite(address, value);
 		}
 	}
@@ -80,7 +84,7 @@ pixformat_t framebuffer[256 * 256];
 bool hold_clock = false;
 
 void main() {
-	read_ines("excitebike.nes", &ines);
+	read_ines("smb.nes", &ines);
 
 	cartridge_cpuRead = nrom_cpuRead;
 	cartridge_cpuWrite = nrom_cpuWrite;
@@ -89,11 +93,14 @@ void main() {
 
 	reset6502();
 
+	disassembler_offset = 0x8000;
+	for (int i = 0; i < 20; i++) {
+		disassemble();
+	}
+
 	glfwInit();
 	GLFWwindow* window = glfwCreateWindow(512, 512, "cnes", NULL, NULL);
 	glfwMakeContextCurrent(window);
-	//create_window();
-	//ShowWindow(hwnd, SW_SHOW);
 
 	glEnable(GL_TEXTURE_2D);
 

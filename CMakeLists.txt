@@ -11,7 +11,8 @@ add_executable (cnes_glfw
 	"NROM.h" 
 	"ppu.c"
 	"window.c"
-	"main.c")
+	"main.c" 
+	"disasm.c")
 
 	
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
