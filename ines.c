@@ -26,11 +26,13 @@ void read_ines(const char* path, ines_t* ines) {
 	bool has_trainer = (header.flags[0] & 4) == 4;
 	if (has_trainer) fseek(f, 512, SEEK_CUR);
 
+	ines->prg_rom_size_16k_chunks = header.prg_rom_16k_chunks;
 	size_t prg_rom_size = 16384 * (size_t)header.prg_rom_16k_chunks;
 	ines->prg_rom = (uint8_t*)malloc(prg_rom_size);
 	if (!ines->prg_rom) exit(1);
 	fread(ines->prg_rom, 1, prg_rom_size, f);
 
+	ines->chr_rom_size_8k_chunks = header.chr_rom_8k_chunks;
 	size_t chr_rom_size = 8192 * (size_t)header.chr_rom_8k_chunks;
 	ines->chr_rom = (uint8_t*)malloc(chr_rom_size);
 	if (!ines->chr_rom) exit(1);

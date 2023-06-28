@@ -3,7 +3,14 @@
 #include "cartridge.h"
 #include "fake6502.h"
 
-static uint8_t OAM[256];
+static struct OAMEntry_t {
+	uint8_t y;
+	uint8_t tile_index;
+	uint8_t attributes;
+	uint8_t x;
+} OAM[64];
+
+static uint8_t* oamptr = (uint8_t*)OAM;
 
 union {
 	struct {
@@ -89,7 +96,7 @@ void ppu_internal_bus_write(uint16_t address, uint8_t value) {
 inline uint8_t ppu_internal_bus_read(uint16_t address) {
 	if (address >= 0x3F00) {
 		// Palette control
-		uint8_t index = address & 0xF;
+		uint8_t index = address & 0x3;
 		return palette[index == 0 ? 0 : (address & 0x1F)];
 	}
 	return cartridge_ppuRead(address);
@@ -106,7 +113,7 @@ uint8_t cpu_ppu_bus_read(uint8_t address) {
 			PPUADDR_LATCH = false;
 			break;
 		case 4:
-			value = OAM[OAMADDR];
+			value = oamptr[OAMADDR];
 			break;
 		case 7:
 			value = ppudata_buffer;
@@ -135,7 +142,7 @@ void cpu_ppu_bus_write(uint8_t address, uint8_t value) {
 			OAMADDR = value;
 			break;
 		case 4:
-			OAM[OAMADDR++] = value;
+			oamptr[OAMADDR++] = value;
 			break;
 		case 5:
 			if (PPUADDR_LATCH) {
@@ -183,13 +190,15 @@ uint8_t palette_colors[192] =
 };
 
 uint8_t next_tile;
-uint16_t pattern_plane_0, pattern_plane_1;
-uint16_t attrib_0, attrib_1;
-uint8_t next_attribute;
 uint8_t next_pattern_lsb, next_pattern_msb;
+uint16_t pattern_plane_0, pattern_plane_1;
+uint8_t sprite_lsb[8], sprite_msb[8], num_sprites_on_row;
+static struct OAMEntry_t temp_oam[8];
+
+uint8_t next_attribute;
+uint16_t attrib_0, attrib_1;
 
 NAMETABLE_Address_t nametable_address = { 0 };
-
 int scanline = 0;
 size_t dot = 0;
 
@@ -231,7 +240,7 @@ inline void inc_horiz() {
 }
 
 inline void inc_vert() {
-	if (!PPUMASK.show_background && !PPUMASK.show_sprites) 
+	if (!PPUMASK.show_background && !PPUMASK.show_sprites)
 		return;
 
 	if (V.fine_y_scroll < 7) {
@@ -260,16 +269,12 @@ inline void load_shifters() {
 void tick() {
 
 	if (scanline <= 239) {
-
-		if (PPUMASK.show_sprites && scanline == OAM[0] && dot == OAM[3]) {
-			PPUSTATUS.sprite_0_hit = 1;
-		}
-
 		if (scanline == -1 && dot == 1) {
 			PPUSTATUS.vertical_blank_started = 0;
 			PPUSTATUS.sprite_overflow = 0;
 			PPUSTATUS.sprite_0_hit = 0;
 		}
+
 
 
 		if ((dot >= 2 && dot < 258) || (dot >= 321 && dot < 338)) {
@@ -298,9 +303,8 @@ void tick() {
 					inc_horiz();
 					break;
 			}
-
-
 		}
+
 
 		if (dot == 256) {
 			inc_vert();
@@ -313,10 +317,54 @@ void tick() {
 				V.horizontal_nametable = T.horizontal_nametable;
 				V.coarse_x_scroll = T.coarse_x_scroll;
 			}
+
+			if (PPUMASK.show_sprites) {
+				for (size_t i = 0; i < 8; i++) {
+					temp_oam[i].x = 0xFF;
+					temp_oam[i].y = 0xFF;
+					temp_oam[i].attributes = 0xFF;
+					temp_oam[i].tile_index = 0xFF;
+				}
+
+				num_sprites_on_row = 0;
+
+				if (PPUMASK.show_sprites) {
+					for (size_t i = 0; i < 64; i++) {
+						int delta_y = scanline - (int)OAM[i].y;
+						if (delta_y >= 0 && delta_y < 8) {
+							if (num_sprites_on_row < 8) {
+								temp_oam[num_sprites_on_row].y = OAM[i].y;
+								temp_oam[num_sprites_on_row].x = OAM[i].x;
+								temp_oam[num_sprites_on_row].tile_index = OAM[i].tile_index;
+								temp_oam[num_sprites_on_row].attributes = OAM[i].attributes;
+								num_sprites_on_row++;
+							} else {
+								PPUSTATUS.sprite_overflow = 1;
+							}
+						}
+					}
+				}
+			}
 		}
 
 		if (dot == 338 || dot == 340) {
 			nametable_fetch();
+		}
+
+		if (dot == 340) {
+			if (PPUMASK.show_sprites) {
+				for (size_t i = 0; i < num_sprites_on_row; i++) {
+					nametable_address.fine_y_offset = (scanline - temp_oam[i].y);
+					nametable_address.bit_plane = 0;
+					nametable_address.tile_lo = temp_oam[i].tile_index & 0xF;
+					nametable_address.tile_hi = (temp_oam[i].tile_index >> 4) & 0xF;
+					nametable_address.pattern_table_half = PPUCTRL.sprite_pattern_table_address;
+					sprite_lsb[i] = ppu_internal_bus_read(nametable_address.value);
+
+					nametable_address.bit_plane = 1;
+					sprite_msb[i] = ppu_internal_bus_read(nametable_address.value);
+				}
+			}
 		}
 
 		if (PPUMASK.show_background && scanline == -1 && dot >= 280 && dot <= 304) {
@@ -325,21 +373,81 @@ void tick() {
 			V.vertical_nametable = T.vertical_nametable;
 		}
 
-		if (PPUMASK.show_background && scanline >= 0 && dot >= 1 && dot <= 256) {
-			uint16_t bit = 0x8000 >> fine_x_scroll;
+		if (scanline >= 0 && dot >= 1 && dot <= 256) {
+			uint8_t bg_pixel = 0;
+			uint8_t bg_palette = 0;
 
-			uint8_t lo_bit = (pattern_plane_0 & bit) == bit ? 1 : 0;
-			uint8_t hi_bit = (pattern_plane_1 & bit) == bit ? 1 : 0;
+			if (PPUMASK.show_background) {
+				uint16_t bit = 0x8000 >> fine_x_scroll;
 
-			uint8_t attr_lo = (attrib_0 & bit) == bit ? 1 : 0;
-			uint8_t attr_hi = (attrib_1 & bit) == bit ? 1 : 0;
+				uint8_t lo_bit = (pattern_plane_0 & bit) ? 1 : 0;
+				uint8_t hi_bit = (pattern_plane_1 & bit) ? 1 : 0;
+				bg_pixel = (hi_bit << 1) | lo_bit;
 
-			uint8_t palette = ppu_internal_bus_read((uint16_t)(0x3F00 | (attr_hi << 3) | (attr_lo << 2) | (hi_bit << 1) | lo_bit));
+				uint8_t attr_lo = (attrib_0 & bit) ? 1 : 0;
+				uint8_t attr_hi = (attrib_1 & bit) ? 1 : 0;
+				bg_palette = (attr_hi << 3) | (attr_lo << 2);
+			}
 
+			size_t first_found = 0;
+			uint8_t sprite_pixel = 0;
+			uint8_t sprite_palette = 0;
+
+			if (PPUMASK.show_sprites) {
+				for (size_t sprite_n = 0; sprite_n < num_sprites_on_row; sprite_n++) {
+					if (temp_oam[sprite_n].x == 0) {
+						bool flipped_x = (temp_oam[sprite_n].attributes & 0x40) != 0;
+						if (sprite_pixel == 0) {
+							uint8_t lo_bit = (sprite_lsb[sprite_n] & (flipped_x ? 1 : 0x80)) ? 1 : 0;
+							uint8_t hi_bit = (sprite_msb[sprite_n] & (flipped_x ? 1 : 0x80)) ? 1 : 0;
+							uint8_t pix = (hi_bit << 1) | lo_bit;
+							if (pix != 0) {
+								first_found = sprite_n;
+								sprite_pixel = pix;
+								sprite_palette = (temp_oam[sprite_n].attributes & 0b11) << 2;
+							}
+						}
+
+						if (flipped_x) {
+							sprite_lsb[sprite_n] >>= 1;
+							sprite_msb[sprite_n] >>= 1;
+						} else {
+							sprite_lsb[sprite_n] <<= 1;
+							sprite_msb[sprite_n] <<= 1;
+						}
+					} else {
+						temp_oam[sprite_n].x--;
+					}
+				}
+			}
+
+			uint16_t output_palette_location = 0x3F00;
+			uint8_t output_pixel = bg_pixel;
+			uint8_t output_palette = bg_palette;
+
+			if (PPUMASK.show_sprites) {
+				if (sprite_pixel != 0 && bg_pixel == 0) {
+					output_pixel = sprite_pixel;
+					output_palette = sprite_palette;
+					output_palette_location = 0x3F10;
+				} else if (sprite_pixel != 0 && bg_pixel != 0) {
+					if (first_found == 0) {
+						PPUSTATUS.sprite_0_hit = 1;
+					}
+					if (temp_oam[first_found].attributes & 0b10000) {
+						output_pixel = sprite_pixel;
+						output_palette = sprite_palette;
+						output_palette_location = 0x3F10;
+					}
+				}
+			}
+
+			uint8_t palette_index = ppu_internal_bus_read((uint16_t)(output_palette_location | output_palette | output_pixel));
 			pixformat_t* pixel = &framebuffer[(size_t)256 * scanline + (dot - 1)];
-			pixel->r = palette_colors[palette * 3 + 0];
-			pixel->g = palette_colors[palette * 3 + 1];
-			pixel->b = palette_colors[palette * 3 + 2];
+			pixel->r = palette_colors[palette_index * 3 + 0];
+			pixel->g = palette_colors[palette_index * 3 + 1];
+			pixel->b = palette_colors[palette_index * 3 + 2];
+
 		}
 
 	}

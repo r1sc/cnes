@@ -24,7 +24,7 @@ void nrom_ppuWrite(uint16_t address, uint8_t value) {
 }
 
 uint8_t nrom_cpuRead(uint16_t address) {
-	return ines.prg_rom[address & 0x7FFF];
+	return ines.prg_rom[address & (ines.prg_rom_size_16k_chunks == 1 ? 0x3FFF : 0x7FFF)];
 }
 
 void nrom_cpuWrite(uint16_t address, uint8_t value) {

@@ -48,6 +48,7 @@ uint8_t read6502(uint16_t address) {
 	return cartridge_cpuRead(address);
 }
 
+extern size_t cpu_timer;
 void write6502(uint16_t address, uint8_t value) {
 	if (address == 0x4014) {
 		// DMA
@@ -55,6 +56,7 @@ void write6502(uint16_t address, uint8_t value) {
 		for (uint16_t i = 0; i < 256; i++) {
 			cpu_ppu_bus_write(4, read6502(page | i));
 		}
+		cpu_timer += 513;
 	} else if (address >= 0x4000 && address <= 0x401f) {
 		return;
 	} else {
@@ -84,7 +86,7 @@ pixformat_t framebuffer[256 * 256];
 bool hold_clock = false;
 
 void main() {
-	read_ines("smb.nes", &ines);
+	read_ines("donkey kong.nes", &ines);
 
 	cartridge_cpuRead = nrom_cpuRead;
 	cartridge_cpuWrite = nrom_cpuWrite;
