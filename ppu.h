@@ -7,7 +7,7 @@ typedef struct {
 	uint8_t b;
 } pixformat_t;
 
-extern pixformat_t framebuffer[256 * 256];
+extern pixformat_t framebuffer[256 * 240];
 
 uint8_t cpu_ppu_bus_read(uint8_t address);
 void cpu_ppu_bus_write(uint8_t address, uint8_t value);

@@ -30,7 +30,7 @@ uint8_t read6502(uint16_t address) {
 		uint8_t value = controller_status & 1;
 		controller_status >>= 1;
 		return value;
-	} else if (address >= 0x4000 && address <= 0x401f) {
+	} else if ((address >= 0x4000 && address <= 0x4013) || address == 0x4015 || address == 0x4017) {
 		// APU
 		return 0;
 	}
@@ -71,11 +71,11 @@ void write6502(uint16_t address, uint8_t value) {
 			| (glfwGetKey(window, GLFW_KEY_DOWN) << 5)
 			| (glfwGetKey(window, GLFW_KEY_UP) << 4)
 			| (glfwGetKey(window, GLFW_KEY_A) << 3) // Start
-			| (glfwGetKey(window, GLFW_KEY_S) << 2) 
-			| (glfwGetKey(window, GLFW_KEY_Z) << 1)
-			| (glfwGetKey(window, GLFW_KEY_X) << 0);
+			| (glfwGetKey(window, GLFW_KEY_S) << 2) // Select
+			| (glfwGetKey(window, GLFW_KEY_Z) << 1) // B
+			| (glfwGetKey(window, GLFW_KEY_X) << 0); // A
 
-	} else if (address >= 0x4000 && address <= 0x401f) {
+	} else if ((address >= 0x4000 && address <= 0x4013) || address == 0x4015 || address == 0x4017) {
 		;
 	} else {
 		bool cpu_a15 = (address & BIT_15) != 0;
@@ -93,16 +93,21 @@ void write6502(uint16_t address, uint8_t value) {
 			} else if (cpu_ram_cs) {
 				cpuram[address & 0x7FF] = value;
 			}
-		}
-		else {
+		} else {
 			cartridge_cpuWrite(address, value);
 		}
 	}
 }
 
-pixformat_t framebuffer[256 * 256];
+pixformat_t framebuffer[256 * 240];
 bool hold_clock = false;
-
+void window_resize(GLFWwindow* window, int width, int height) {
+	int size = width;
+	if (width > height) {
+		size = height;
+	}
+	glViewport(width / 2 - size / 2, height / 2 - size / 2, size, size);
+}
 void main() {
 	read_ines("smb.nes", &ines);
 
@@ -121,6 +126,7 @@ void main() {
 	glfwInit();
 	window = glfwCreateWindow(512, 512, "cnes", NULL, NULL);
 	glfwMakeContextCurrent(window);
+	glfwSetWindowSizeCallback(window, window_resize);
 
 	glEnable(GL_TEXTURE_2D);
 
