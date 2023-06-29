@@ -167,7 +167,7 @@ void cpu_ppu_bus_write(uint8_t address, uint8_t value) {
 			PPUADDR_LATCH = !PPUADDR_LATCH;
 			break;
 		case 7:
-			ppu_internal_bus_write(V.value & 0x3FFF, value);
+			ppu_internal_bus_write(V.value, value);
 			V.value += (PPUCTRL.vram_address_increment ? 32 : 1);
 			break;
 	}
@@ -228,7 +228,7 @@ inline void bg_msb_fetch() {
 }
 
 inline void inc_horiz() {
-	if (!PPUMASK.show_background && !PPUMASK.show_sprites)
+	if (!PPUMASK.show_background)
 		return;
 
 	if (V.coarse_x_scroll == 31) {
@@ -240,7 +240,7 @@ inline void inc_horiz() {
 }
 
 inline void inc_vert() {
-	if (!PPUMASK.show_background && !PPUMASK.show_sprites)
+	if (!PPUMASK.show_background)
 		return;
 
 	if (V.fine_y_scroll < 7) {
@@ -274,8 +274,6 @@ void tick() {
 			PPUSTATUS.sprite_overflow = 0;
 			PPUSTATUS.sprite_0_hit = 0;
 		}
-
-
 
 		if ((dot >= 2 && dot < 258) || (dot >= 321 && dot < 338)) {
 			if (PPUMASK.show_background) {
@@ -389,7 +387,7 @@ void tick() {
 				bg_palette = (attr_hi << 3) | (attr_lo << 2);
 			}
 
-			size_t first_found = 0;
+			int first_found = -1;
 			uint8_t sprite_pixel = 0;
 			uint8_t sprite_palette = 0;
 
@@ -401,8 +399,13 @@ void tick() {
 							uint8_t lo_bit = (sprite_lsb[sprite_n] & (flipped_x ? 1 : 0x80)) ? 1 : 0;
 							uint8_t hi_bit = (sprite_msb[sprite_n] & (flipped_x ? 1 : 0x80)) ? 1 : 0;
 							uint8_t pix = (hi_bit << 1) | lo_bit;
+							
 							if (pix != 0) {
 								first_found = sprite_n;
+								if (sprite_n == 0 && bg_pixel != 0 && temp_oam[0].y == OAM[0].y) {
+									PPUSTATUS.sprite_0_hit = 1;
+								}
+
 								sprite_pixel = pix;
 								sprite_palette = (temp_oam[sprite_n].attributes & 0b11) << 2;
 							}
@@ -425,16 +428,19 @@ void tick() {
 			uint8_t output_pixel = bg_pixel;
 			uint8_t output_palette = bg_palette;
 
+			//if (PPUMASK.show_sprites && scanline == (OAM[0].y + 1) && dot == OAM[0].x) {
+			//	if (bg_pixel != 0) {
+			//		PPUSTATUS.sprite_0_hit = 1;
+			//	}
+			//}
 			if (PPUMASK.show_sprites) {
-				if (sprite_pixel != 0 && bg_pixel == 0) {
+				if (bg_pixel == 0 && sprite_pixel != 0) {
 					output_pixel = sprite_pixel;
 					output_palette = sprite_palette;
 					output_palette_location = 0x3F10;
 				} else if (sprite_pixel != 0 && bg_pixel != 0) {
-					if (first_found == 0) {
-						PPUSTATUS.sprite_0_hit = 1;
-					}
-					if (temp_oam[first_found].attributes & 0b10000) {
+					
+					if (((temp_oam[first_found].attributes >> 5) & 1) == 0) {
 						output_pixel = sprite_pixel;
 						output_palette = sprite_palette;
 						output_palette_location = 0x3F10;

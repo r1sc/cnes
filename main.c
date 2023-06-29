@@ -23,8 +23,14 @@ ines_t ines;
 uint8_t ciram[2048];
 uint8_t cpuram[2048];
 
+uint8_t controller_status = 0xFF;
+
 uint8_t read6502(uint16_t address) {
-	if (address >= 0x4000 && address <= 0x401f) {
+	if (address == 0x4016) {
+		uint8_t value = controller_status & 1;
+		controller_status >>= 1;
+		return value;
+	} else if (address >= 0x4000 && address <= 0x401f) {
 		// APU
 		return 0;
 	}
@@ -48,7 +54,9 @@ uint8_t read6502(uint16_t address) {
 	return cartridge_cpuRead(address);
 }
 
+static GLFWwindow* window;
 extern size_t cpu_timer;
+
 void write6502(uint16_t address, uint8_t value) {
 	if (address == 0x4014) {
 		// DMA
@@ -57,8 +65,18 @@ void write6502(uint16_t address, uint8_t value) {
 			cpu_ppu_bus_write(4, read6502(page | i));
 		}
 		cpu_timer += 513;
+	} else if (address == 0x4016) {
+		controller_status = (glfwGetKey(window, GLFW_KEY_RIGHT) << 7)
+			| (glfwGetKey(window, GLFW_KEY_LEFT) << 6)
+			| (glfwGetKey(window, GLFW_KEY_DOWN) << 5)
+			| (glfwGetKey(window, GLFW_KEY_UP) << 4)
+			| (glfwGetKey(window, GLFW_KEY_A) << 3) // Start
+			| (glfwGetKey(window, GLFW_KEY_S) << 2) 
+			| (glfwGetKey(window, GLFW_KEY_Z) << 1)
+			| (glfwGetKey(window, GLFW_KEY_X) << 0);
+
 	} else if (address >= 0x4000 && address <= 0x401f) {
-		return;
+		;
 	} else {
 		bool cpu_a15 = (address & BIT_15) != 0;
 		bool cpu_a14 = (address & BIT_14) != 0;
@@ -86,7 +104,7 @@ pixformat_t framebuffer[256 * 256];
 bool hold_clock = false;
 
 void main() {
-	read_ines("donkey kong.nes", &ines);
+	read_ines("smb.nes", &ines);
 
 	cartridge_cpuRead = nrom_cpuRead;
 	cartridge_cpuWrite = nrom_cpuWrite;
@@ -101,7 +119,7 @@ void main() {
 	}
 
 	glfwInit();
-	GLFWwindow* window = glfwCreateWindow(512, 512, "cnes", NULL, NULL);
+	window = glfwCreateWindow(512, 512, "cnes", NULL, NULL);
 	glfwMakeContextCurrent(window);
 
 	glEnable(GL_TEXTURE_2D);
@@ -115,21 +133,34 @@ void main() {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 256, 256, 0, GL_RGB, GL_UNSIGNED_BYTE, framebuffer);
 
+	DWORD last = GetTickCount();
+	DWORD accum = 0;
+
 	while (!glfwWindowShouldClose(window)) {
-		
-		tick_frame();
+		DWORD now = GetTickCount();
+		DWORD delta = now - last;
+		last = now;
+		accum += delta;
 
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 256, GL_RGB, GL_UNSIGNED_BYTE, framebuffer);
+		bool needs_rerender = false;
+		while (accum >= 16) {
+			tick_frame();
+			needs_rerender = true;
+			accum -= 16;
+		}
 
-		glBegin(GL_QUADS);
-		glTexCoord2i(0, 0); glVertex2i(-1, 1);
-		glTexCoord2i(1, 0); glVertex2i(1, 1);
-		glTexCoord2i(1, 1); glVertex2i(1, -1);
-		glTexCoord2i(0, 1); glVertex2i(-1, -1);
-		glEnd();
+		if (needs_rerender) {
+			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 256, GL_RGB, GL_UNSIGNED_BYTE, framebuffer);
+			glBegin(GL_QUADS);
+			glTexCoord2i(0, 0); glVertex2i(-1, 1);
+			glTexCoord2i(1, 0); glVertex2i(1, 1);
+			glTexCoord2i(1, 1); glVertex2i(1, -1);
+			glTexCoord2i(0, 1); glVertex2i(-1, -1);
+			glEnd();
 
-		/* Swap front and back buffers */
-		glfwSwapBuffers(window);
+			/* Swap front and back buffers */
+			glfwSwapBuffers(window);
+		}
 
 		/* Poll for and process events */
 		glfwPollEvents();
