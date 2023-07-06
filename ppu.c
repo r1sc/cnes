@@ -336,8 +336,9 @@ void tick() {
 								temp_oam[num_sprites_on_row].tile_index = OAM[i].tile_index;
 								temp_oam[num_sprites_on_row].attributes = OAM[i].attributes;
 								num_sprites_on_row++;
-							} else {
-								PPUSTATUS.sprite_overflow = 1;
+								if (num_sprites_on_row == 8) {
+									PPUSTATUS.sprite_overflow = 1;
+								}
 							}
 						}
 					}
@@ -352,7 +353,12 @@ void tick() {
 		if (dot == 340) {
 			if (PPUMASK.show_sprites) {
 				for (size_t i = 0; i < num_sprites_on_row; i++) {
-					nametable_address.fine_y_offset = (scanline - temp_oam[i].y);
+					nametable_address.fine_y_offset = (uint8_t)(scanline - (int)temp_oam[i].y);
+					bool flipped_y = (temp_oam[i].attributes & 0x80) != 0;
+					if (flipped_y) {
+						nametable_address.fine_y_offset = (uint8_t)(7-nametable_address.fine_y_offset);
+					}
+					
 					nametable_address.bit_plane = 0;
 					nametable_address.tile_lo = temp_oam[i].tile_index & 0xF;
 					nametable_address.tile_hi = (temp_oam[i].tile_index >> 4) & 0xF;
@@ -428,18 +434,12 @@ void tick() {
 			uint8_t output_pixel = bg_pixel;
 			uint8_t output_palette = bg_palette;
 
-			//if (PPUMASK.show_sprites && scanline == (OAM[0].y + 1) && dot == OAM[0].x) {
-			//	if (bg_pixel != 0) {
-			//		PPUSTATUS.sprite_0_hit = 1;
-			//	}
-			//}
 			if (PPUMASK.show_sprites) {
 				if (bg_pixel == 0 && sprite_pixel != 0) {
 					output_pixel = sprite_pixel;
 					output_palette = sprite_palette;
 					output_palette_location = 0x3F10;
 				} else if (sprite_pixel != 0 && bg_pixel != 0) {
-					
 					if (((temp_oam[first_found].attributes >> 5) & 1) == 0) {
 						output_pixel = sprite_pixel;
 						output_palette = sprite_palette;

@@ -100,7 +100,7 @@ void write6502(uint16_t address, uint8_t value) {
 }
 
 pixformat_t framebuffer[256 * 240];
-bool hold_clock = false;
+
 void window_resize(GLFWwindow* window, int width, int height) {
 	int size = width;
 	if (width > height) {
@@ -108,6 +108,7 @@ void window_resize(GLFWwindow* window, int width, int height) {
 	}
 	glViewport(width / 2 - size / 2, height / 2 - size / 2, size, size);
 }
+
 void main() {
 	read_ines("smb.nes", &ines);
 
@@ -118,10 +119,10 @@ void main() {
 
 	reset6502();
 
-	disassembler_offset = 0x8000;
+	/*disassembler_offset = 0x8000;
 	for (int i = 0; i < 20; i++) {
 		disassemble();
-	}
+	}*/
 
 	glfwInit();
 	window = glfwCreateWindow(512, 512, "cnes", NULL, NULL);
@@ -137,7 +138,7 @@ void main() {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 256, 256, 0, GL_RGB, GL_UNSIGNED_BYTE, framebuffer);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 256, 240, 0, GL_RGB, GL_UNSIGNED_BYTE, framebuffer);
 
 	DWORD last = GetTickCount();
 	DWORD accum = 0;
@@ -156,7 +157,7 @@ void main() {
 		}
 
 		if (needs_rerender) {
-			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 256, GL_RGB, GL_UNSIGNED_BYTE, framebuffer);
+			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 240, GL_RGB, GL_UNSIGNED_BYTE, framebuffer);
 			glBegin(GL_QUADS);
 			glTexCoord2i(0, 0); glVertex2i(-1, 1);
 			glTexCoord2i(1, 0); glVertex2i(1, 1);
@@ -170,6 +171,8 @@ void main() {
 
 		/* Poll for and process events */
 		glfwPollEvents();
+
+		Sleep(0);
 	}
 	glfwTerminate();
 

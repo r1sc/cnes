@@ -10,6 +10,4 @@ void run6502(size_t num_clocks);
 void reset6502();
 uint8_t read6502(uint16_t address);
 
-extern bool hold_clock;
-
 extern size_t clockticks6502;
