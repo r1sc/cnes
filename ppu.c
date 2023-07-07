@@ -93,7 +93,7 @@ void ppu_internal_bus_write(uint16_t address, uint8_t value) {
 	}
 }
 
-inline uint8_t ppu_internal_bus_read(uint16_t address) {
+uint8_t ppu_internal_bus_read(uint16_t address) {
 	if (address >= 0x3F00) {
 		// Palette control
 		uint8_t index = address & 0x3;
@@ -200,7 +200,7 @@ uint16_t attrib_0, attrib_1;
 
 NAMETABLE_Address_t nametable_address = { 0 };
 int scanline = 0;
-size_t dot = 0;
+int dot = 0;
 
 inline void nametable_fetch() {
 	next_tile = ppu_internal_bus_read(0x2000 | (V.value & 0x0FFF));
@@ -227,7 +227,7 @@ inline void bg_msb_fetch() {
 	next_pattern_msb = ppu_internal_bus_read(nametable_address.value);
 }
 
-inline void inc_horiz() {
+void inc_horiz() {
 	if (!PPUMASK.show_background)
 		return;
 
@@ -239,7 +239,7 @@ inline void inc_horiz() {
 	}
 }
 
-inline void inc_vert() {
+void inc_vert() {
 	if (!PPUMASK.show_background)
 		return;
 
@@ -258,7 +258,7 @@ inline void inc_vert() {
 	}
 }
 
-inline void load_shifters() {
+void load_shifters() {
 	pattern_plane_0 |= next_pattern_lsb;
 	pattern_plane_1 |= next_pattern_msb;
 
@@ -463,26 +463,5 @@ void tick() {
 		if (PPUCTRL.gen_nmi_vblank) {
 			nmi6502();
 		}
-	}
-}
-
-size_t cpu_timer = 0;
-
-void tick_frame() {
-	scanline = -1;
-	while (scanline <= 260) {
-		dot = 0;
-		while (dot <= 340) {
-			if (cpu_timer == 0) {
-				step6502();
-				cpu_timer = clockticks6502 * 3;
-			} else {
-				cpu_timer--;
-			}
-
-			tick();
-			dot++;
-		}
-		scanline++;
 	}
 }

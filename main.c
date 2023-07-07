@@ -38,9 +38,8 @@ uint8_t read6502(uint16_t address) {
 	bool cpu_a15 = (address & BIT_15) != 0;
 	bool cpu_a14 = (address & BIT_14) != 0;
 	bool cpu_a13 = (address & BIT_13) != 0;
-	bool phase2 = true;
+	bool romsel = cpu_a15;
 
-	bool romsel = cpu_a15 && phase2;
 	if (!romsel) {
 		bool ppu_cs = !cpu_a14 && cpu_a13;
 		bool cpu_ram_cs = !cpu_a14 && !cpu_a13;
@@ -70,8 +69,8 @@ void write6502(uint16_t address, uint8_t value) {
 			| (glfwGetKey(window, GLFW_KEY_LEFT) << 6)
 			| (glfwGetKey(window, GLFW_KEY_DOWN) << 5)
 			| (glfwGetKey(window, GLFW_KEY_UP) << 4)
-			| (glfwGetKey(window, GLFW_KEY_A) << 3) // Start
-			| (glfwGetKey(window, GLFW_KEY_S) << 2) // Select
+			| (glfwGetKey(window, GLFW_KEY_S) << 3) // Start
+			| (glfwGetKey(window, GLFW_KEY_A) << 2) // Select
 			| (glfwGetKey(window, GLFW_KEY_Z) << 1) // B
 			| (glfwGetKey(window, GLFW_KEY_X) << 0); // A
 
@@ -81,9 +80,8 @@ void write6502(uint16_t address, uint8_t value) {
 		bool cpu_a15 = (address & BIT_15) != 0;
 		bool cpu_a14 = (address & BIT_14) != 0;
 		bool cpu_a13 = (address & BIT_13) != 0;
-		bool phase2 = true;
+		bool romsel = cpu_a15;
 
-		bool romsel = cpu_a15 && phase2;
 		if (!romsel) {
 			bool ppu_cs = !cpu_a14 && cpu_a13;
 			bool cpu_ram_cs = !cpu_a14 && !cpu_a13;
@@ -100,6 +98,26 @@ void write6502(uint16_t address, uint8_t value) {
 }
 
 pixformat_t framebuffer[256 * 240];
+size_t cpu_timer = 0;
+
+void tick_frame() {
+	scanline = -1;
+	while (scanline <= 260) {
+		dot = 0;
+		while (dot <= 340) {
+			if (cpu_timer == 0) {
+				step6502();
+				cpu_timer = clockticks6502 * 3;
+			} else {
+				cpu_timer--;
+			}
+
+			tick();
+			dot++;
+		}
+		scanline++;
+	}
+}
 
 void window_resize(GLFWwindow* window, int width, int height) {
 	int size = width;
@@ -110,7 +128,7 @@ void window_resize(GLFWwindow* window, int width, int height) {
 }
 
 void main() {
-	read_ines("smb.nes", &ines);
+	read_ines("ice climber.nes", &ines);
 
 	cartridge_cpuRead = nrom_cpuRead;
 	cartridge_cpuWrite = nrom_cpuWrite;
@@ -125,9 +143,11 @@ void main() {
 	}*/
 
 	glfwInit();
+	glfwWindowHint(GLFW_SAMPLES, 4);
 	window = glfwCreateWindow(512, 512, "cnes", NULL, NULL);
 	glfwMakeContextCurrent(window);
 	glfwSetWindowSizeCallback(window, window_resize);
+	glfwSwapInterval(0);
 
 	glEnable(GL_TEXTURE_2D);
 
@@ -140,20 +160,22 @@ void main() {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 256, 240, 0, GL_RGB, GL_UNSIGNED_BYTE, framebuffer);
 
-	DWORD last = GetTickCount();
-	DWORD accum = 0;
+	double last = glfwGetTime();
+	double now = last;
+	double accum = 0;
+	double dt = 1.0 / 60.0;
 
 	while (!glfwWindowShouldClose(window)) {
-		DWORD now = GetTickCount();
-		DWORD delta = now - last;
+		now = glfwGetTime();
+		double delta = now - last;
 		last = now;
 		accum += delta;
 
 		bool needs_rerender = false;
-		while (accum >= 16) {
+		while (accum >= dt) {
 			tick_frame();
 			needs_rerender = true;
-			accum -= 16;
+			accum -= dt;
 		}
 
 		if (needs_rerender) {
@@ -164,10 +186,10 @@ void main() {
 			glTexCoord2i(1, 1); glVertex2i(1, -1);
 			glTexCoord2i(0, 1); glVertex2i(-1, -1);
 			glEnd();
-
-			/* Swap front and back buffers */
-			glfwSwapBuffers(window);
 		}
+
+		/* Swap front and back buffers */
+		glfwSwapBuffers(window);
 
 		/* Poll for and process events */
 		glfwPollEvents();
