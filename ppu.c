@@ -393,7 +393,7 @@ void tick() {
 			uint8_t sprite_palette = 0;
 
 			if (PPUMASK.show_sprites) {
-				for (size_t sprite_n = 0; sprite_n < num_sprites_on_row; sprite_n++) {
+				for (int sprite_n = 0; sprite_n < num_sprites_on_row; sprite_n++) {
 					if (temp_oam[sprite_n].x == 0) {
 						bool flipped_x = (temp_oam[sprite_n].attributes & 0x40) != 0;
 						if (sprite_pixel == 0) {

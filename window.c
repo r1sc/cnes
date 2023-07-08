@@ -1,11 +1,19 @@
 #include <Windows.h>
 #include <gl/GL.h>
+#include "fake6502.h"
 
 #include "window.h"
 
 HWND hwnd;
 HDC window_dc;
 static HGLRC ourOpenGLRenderingContext;
+
+unsigned int keymap[8] = { 'X', 'Z', 'A', 'S', VK_UP, VK_DOWN, VK_LEFT,  VK_RIGHT };
+uint8_t keysdown;
+
+HMENU menu;
+
+extern void load_ines(char* path);
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
 	switch (message) {
@@ -39,6 +47,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 
 			ourOpenGLRenderingContext = wglCreateContext(window_dc);
 			wglMakeCurrent(window_dc, ourOpenGLRenderingContext);
+
+			menu = CreateMenu();
+
+			HMENU fileMenu = CreateMenu();
+			AppendMenu(menu, MF_STRING | MF_POPUP, (UINT)fileMenu, "File");
+			AppendMenu(fileMenu, MF_STRING, 2, "&Open...");
+			
+			HMENU emuMenu = CreateMenu();
+			AppendMenu(menu, MF_STRING | MF_POPUP, (UINT)emuMenu, "Emulation");
+			AppendMenu(emuMenu, MF_STRING, 3, "Reset");
+
+			SetMenu(hWnd, menu);
+			DrawMenuBar(hWnd);
 		}
 		break;
 		case WM_CLOSE:
@@ -51,7 +72,50 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 		{
 			UINT width = LOWORD(lParam);
 			UINT height = HIWORD(lParam);
-			glViewport(0, 0, width, height);
+
+			int size = width;
+			if (width > height) {
+				size = height;
+			}
+			glViewport(width / 2 - size / 2, height / 2 - size / 2, size, size);
+		}
+		break;
+		case WM_KEYDOWN:
+		{
+			for (size_t i = 0; i < 8; i++) {
+				if (keymap[i] == wParam) {
+					keysdown |= (1 << i);
+				}
+			}
+		}
+		break;
+		case WM_KEYUP:
+		{
+			for (size_t i = 0; i < 8; i++) {
+				if (keymap[i] == wParam) {
+					keysdown &= ~(1 << i);
+				}
+			}
+		}
+		break;
+		case WM_COMMAND:
+		{
+			WORD which = LOWORD(wParam);
+			if (which == 2) {
+				char szFile[100] = { 0 };
+				OPENFILENAME o = { 0 };
+				o.lStructSize = sizeof(OPENFILENAME);
+				o.hwndOwner = hWnd;
+				o.lpstrFilter = "NES Roms (*.nes)\0*.nes\0";
+				o.lpstrFile = szFile;
+				o.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+				o.nMaxFile = sizeof(szFile);
+				if (GetOpenFileName(&o)) {
+					load_ines(szFile);
+				}
+			} else if (which == 3) {
+				reset6502();
+			}
 		}
 		break;
 		default:
@@ -72,8 +136,10 @@ void create_window() {
 		exit(1);
 		return;
 	}
+
 	RECT rect = { 0, 0, 512, 512 };
-	AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, false);
+	AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, true);
 
 	hwnd = CreateWindow(wc.lpszClassName, "cnes", WS_OVERLAPPEDWINDOW | WS_VISIBLE, 0, 0, rect.right - rect.left, rect.bottom - rect.top, 0, 0, hInstance, 0);
+
 }

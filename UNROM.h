@@ -30,13 +30,10 @@ void unrom_ppuWrite(uint16_t address, uint8_t value) {
 static uint8_t selected_bank = 0;
 uint8_t unrom_cpuRead(uint16_t address) {
 	if (address >= 0xC000) {
-		uint8_t* bank = ines.prg_rom + 0x4000 * (ines.prg_rom_size_16k_chunks - 1);
-		return bank[address & 0x3FFF];
+		return ines.prg_rom_banks[ines.prg_rom_size_16k_chunks - 1][address & 0x3FFF];
 	} else {
-		uint8_t* bank = ines.prg_rom + 0x4000 * selected_bank;
-		return bank[address & 0x3FFF];
-	}
-	
+		return ines.prg_rom_banks[selected_bank][address & 0x3FFF];
+	}	
 }
 
 void unrom_cpuWrite(uint16_t address, uint8_t value) {

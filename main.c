@@ -3,7 +3,6 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <gl/GL.h>
-#include <GLFW/glfw3.h>
 
 #include "window.h"
 #include "fake6502.h"
@@ -20,7 +19,7 @@ bus_write_t cartridge_cpuWrite;
 bus_read_t cartridge_ppuRead;
 bus_write_t cartridge_ppuWrite;
 
-ines_t ines;
+ines_t ines = { 0 };
 uint8_t ciram[2048];
 uint8_t cpuram[2048];
 
@@ -54,7 +53,7 @@ uint8_t read6502(uint16_t address) {
 	return cartridge_cpuRead(address);
 }
 
-static GLFWwindow* window;
+//static GLFWwindow* window;
 extern size_t cpu_timer;
 
 void write6502(uint16_t address, uint8_t value) {
@@ -66,14 +65,15 @@ void write6502(uint16_t address, uint8_t value) {
 		}
 		cpu_timer += 513;
 	} else if (address == 0x4016) {
-		controller_status = (glfwGetKey(window, GLFW_KEY_RIGHT) << 7)
-			| (glfwGetKey(window, GLFW_KEY_LEFT) << 6)
-			| (glfwGetKey(window, GLFW_KEY_DOWN) << 5)
-			| (glfwGetKey(window, GLFW_KEY_UP) << 4)
-			| (glfwGetKey(window, GLFW_KEY_S) << 3) // Start
-			| (glfwGetKey(window, GLFW_KEY_A) << 2) // Select
-			| (glfwGetKey(window, GLFW_KEY_Z) << 1) // B
-			| (glfwGetKey(window, GLFW_KEY_X) << 0); // A
+		controller_status = keysdown;
+		//controller_status = (glfwGetKey(window, GLFW_KEY_RIGHT) << 7)
+		//	| (glfwGetKey(window, GLFW_KEY_LEFT) << 6)
+		//	| (glfwGetKey(window, GLFW_KEY_DOWN) << 5)
+		//	| (glfwGetKey(window, GLFW_KEY_UP) << 4)
+		//	| (glfwGetKey(window, GLFW_KEY_S) << 3) // Start
+		//	| (glfwGetKey(window, GLFW_KEY_A) << 2) // Select
+		//	| (glfwGetKey(window, GLFW_KEY_Z) << 1) // B
+		//	| (glfwGetKey(window, GLFW_KEY_X) << 0); // A
 
 	} else if ((address >= 0x4000 && address <= 0x4013) || address == 0x4015 || address == 0x4017) {
 		;
@@ -120,16 +120,12 @@ void tick_frame() {
 	}
 }
 
-void window_resize(GLFWwindow* window, int width, int height) {
-	int size = width;
-	if (width > height) {
-		size = height;
+void load_ines(char* path) {
+	if (ines.prg_rom_banks != NULL) {
+		free_ines(&ines);
 	}
-	glViewport(width / 2 - size / 2, height / 2 - size / 2, size, size);
-}
-
-void main() {
-	read_ines("ducktales.nes", &ines);
+	
+	read_ines(path, &ines);
 
 	if (ines.mapper_number == 0) {
 
@@ -145,18 +141,22 @@ void main() {
 	}
 
 	reset6502();
+}
+
+int APIENTRY WinMain(
+	HINSTANCE hInstance,
+	HINSTANCE hPrevInstance,
+	LPSTR     lpCmdLine,
+	int       nShowCmd
+) {
+	load_ines("smb.nes");
 
 	/*disassembler_offset = 0x8000;
 	for (int i = 0; i < 20; i++) {
 		disassemble();
 	}*/
 
-	glfwInit();
-	//glfwWindowHint(GLFW_SAMPLES, 4);
-	window = glfwCreateWindow(512, 512, "cnes", NULL, NULL);
-	glfwMakeContextCurrent(window);
-	glfwSetWindowSizeCallback(window, window_resize);
-	glfwSwapInterval(0);
+	create_window();
 
 	glEnable(GL_TEXTURE_2D);
 
@@ -169,14 +169,25 @@ void main() {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 256, 240, 0, GL_RGB, GL_UNSIGNED_BYTE, framebuffer);
 
-	double last = glfwGetTime();
-	double now = last;
-	double accum = 0;
-	double dt = 1.0 / 60.0;
+	ULONGLONG last = GetTickCount64();
+	ULONGLONG now = last;
+	ULONGLONG accum = 0;
+	ULONGLONG dt = 16;
 
-	while (!glfwWindowShouldClose(window)) {
-		now = glfwGetTime();
-		double delta = now - last;
+	MSG msg;
+	bool running = true;
+	while (running) {
+		while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+			if (msg.message == WM_QUIT) {
+				running = false;
+			}
+
+			TranslateMessage(&msg);
+			DispatchMessage(&msg);
+		}
+
+		now = GetTickCount64();
+		ULONGLONG delta = now - last;
 		last = now;
 		accum += delta;
 
@@ -196,17 +207,11 @@ void main() {
 			glTexCoord2i(0, 1); glVertex2i(-1, -1);
 			glEnd();
 
-			/* Swap front and back buffers */
-			glfwSwapBuffers(window);
+			SwapBuffers(window_dc);
 		}
-
-
-		/* Poll for and process events */
-		glfwPollEvents();
 
 		Sleep(0);
 	}
-	glfwTerminate();
 
 	free_ines(&ines);
 }

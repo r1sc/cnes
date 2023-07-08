@@ -35,10 +35,10 @@ void read_ines(const char* path, ines_t* ines) {
 	if (has_trainer) fseek(f, 512, SEEK_CUR);
 
 	ines->prg_rom_size_16k_chunks = header.prg_rom_16k_chunks;
-	size_t prg_rom_size = 16384 * (size_t)header.prg_rom_16k_chunks;
-	ines->prg_rom = (uint8_t*)malloc(prg_rom_size);
-	if (!ines->prg_rom) exit(1);
-	fread(ines->prg_rom, 1, prg_rom_size, f);
+	ines->prg_rom_banks = (PRG_ROM_BANK*)calloc(header.prg_rom_16k_chunks, 16384);
+	if (!ines->prg_rom_banks) exit(1);
+
+	fread(ines->prg_rom_banks, 16384, header.prg_rom_16k_chunks, f);
 
 	ines->chr_rom_size_8k_chunks = header.chr_rom_8k_chunks;
 	size_t chr_rom_size = header.chr_rom_8k_chunks == 0 ? 0x4000 : 8192 * (size_t)header.chr_rom_8k_chunks;
@@ -50,6 +50,6 @@ void read_ines(const char* path, ines_t* ines) {
 }
 
 void free_ines(ines_t* ines) {
-	free(ines->prg_rom);
+	free(ines->prg_rom_banks);
 	free(ines->chr_rom);
 }
