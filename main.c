@@ -12,6 +12,7 @@
 #include "cartridge.h"
 #include "bit.h"
 #include "NROM.h"
+#include "UNROM.h"
 #include "disasm.h"
 
 bus_read_t cartridge_cpuRead;
@@ -128,12 +129,20 @@ void window_resize(GLFWwindow* window, int width, int height) {
 }
 
 void main() {
-	read_ines("ice climber.nes", &ines);
+	read_ines("ducktales.nes", &ines);
 
-	cartridge_cpuRead = nrom_cpuRead;
-	cartridge_cpuWrite = nrom_cpuWrite;
-	cartridge_ppuRead = nrom_ppuRead;
-	cartridge_ppuWrite = nrom_ppuWrite;
+	if (ines.mapper_number == 0) {
+
+		cartridge_cpuRead = nrom_cpuRead;
+		cartridge_cpuWrite = nrom_cpuWrite;
+		cartridge_ppuRead = nrom_ppuRead;
+		cartridge_ppuWrite = nrom_ppuWrite;
+	} else if (ines.mapper_number == 2) {
+		cartridge_cpuRead = unrom_cpuRead;
+		cartridge_cpuWrite = unrom_cpuWrite;
+		cartridge_ppuRead = unrom_ppuRead;
+		cartridge_ppuWrite = unrom_ppuWrite;
+	}
 
 	reset6502();
 
@@ -143,7 +152,7 @@ void main() {
 	}*/
 
 	glfwInit();
-	glfwWindowHint(GLFW_SAMPLES, 4);
+	//glfwWindowHint(GLFW_SAMPLES, 4);
 	window = glfwCreateWindow(512, 512, "cnes", NULL, NULL);
 	glfwMakeContextCurrent(window);
 	glfwSetWindowSizeCallback(window, window_resize);
@@ -186,10 +195,11 @@ void main() {
 			glTexCoord2i(1, 1); glVertex2i(1, -1);
 			glTexCoord2i(0, 1); glVertex2i(-1, -1);
 			glEnd();
+
+			/* Swap front and back buffers */
+			glfwSwapBuffers(window);
 		}
 
-		/* Swap front and back buffers */
-		glfwSwapBuffers(window);
 
 		/* Poll for and process events */
 		glfwPollEvents();

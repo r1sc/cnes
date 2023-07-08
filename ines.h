@@ -2,6 +2,7 @@
 #include <stdint.h>
 
 typedef struct {
+	uint8_t mapper_number;
 	uint8_t* prg_rom;
 	uint8_t prg_rom_size_16k_chunks;
 	uint8_t* chr_rom;

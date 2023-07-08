@@ -12,7 +12,7 @@ add_executable (cnes_glfw
 	"ppu.c"
 	"window.c"
 	"main.c" 
-	"disasm.c")
+	"disasm.c" "UNROM.h")
 
 	
 if(MSVC)

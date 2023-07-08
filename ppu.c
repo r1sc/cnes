@@ -159,10 +159,7 @@ void cpu_ppu_bus_write(uint8_t address, uint8_t value) {
 				T.value = (T.value & 0xFF00) | value;
 				V.value = T.value;
 			} else {
-				uint16_t temp = value & 0x7F;
-				temp <<= 8;
-				T.value = temp | (T.value & 0xFF);
-				T.value = T.value & 0x7FFF; // Clear top bit
+				T.value = ((((uint16_t)value & 0x7F) << 8) | (T.value & 0xFF)) & 0x7FFF;
 			}
 			PPUADDR_LATCH = !PPUADDR_LATCH;
 			break;
@@ -306,9 +303,7 @@ void tick() {
 
 		if (dot == 256) {
 			inc_vert();
-		}
-
-		if (dot == 257) {
+		} else if (dot == 257) {
 			load_shifters();
 
 			if (PPUMASK.show_background || PPUMASK.show_sprites) {
@@ -453,12 +448,8 @@ void tick() {
 			pixel->r = palette_colors[palette_index * 3 + 0];
 			pixel->g = palette_colors[palette_index * 3 + 1];
 			pixel->b = palette_colors[palette_index * 3 + 2];
-
 		}
-
-	}
-
-	if (scanline == 241 && dot == 1) {
+	} else if (scanline == 241 && dot == 1) {
 		PPUSTATUS.vertical_blank_started = 1;
 		if (PPUCTRL.gen_nmi_vblank) {
 			nmi6502();

@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <string.h>
 
 #include "ines.h"
 
@@ -20,6 +21,13 @@ void read_ines(const char* path, ines_t* ines) {
 	ines_header_t header;
 	fread(&header, sizeof(ines_header_t), 1, f);
 
+	char* diskdude = (char*)& header.flags[1];
+	if (strncmp(diskdude, "DiskDude!", 9) == 0) {
+		ines->mapper_number = header.flags[0] >> 4;
+	} else {
+		ines->mapper_number = (header.flags[0] >> 4) | (header.flags[1] & 0xF0);
+	}
+
 	uint8_t a10 = header.flags[0] & 1;
 	ines->ppuaddress_ciram_a10_shift_count = (a10 == 0) ? 11 : 10;
 
@@ -33,7 +41,7 @@ void read_ines(const char* path, ines_t* ines) {
 	fread(ines->prg_rom, 1, prg_rom_size, f);
 
 	ines->chr_rom_size_8k_chunks = header.chr_rom_8k_chunks;
-	size_t chr_rom_size = 8192 * (size_t)header.chr_rom_8k_chunks;
+	size_t chr_rom_size = header.chr_rom_8k_chunks == 0 ? 0x4000 : 8192 * (size_t)header.chr_rom_8k_chunks;
 	ines->chr_rom = (uint8_t*)malloc(chr_rom_size);
 	if (!ines->chr_rom) exit(1);
 	fread(ines->chr_rom, 1, chr_rom_size, f);
