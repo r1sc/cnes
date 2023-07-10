@@ -198,6 +198,7 @@ uint16_t attrib_0, attrib_1;
 NAMETABLE_Address_t nametable_address = { 0 };
 int scanline = 0;
 int dot = 0;
+pixformat_t framebuffer[256 * 240];
 
 inline void nametable_fetch() {
 	next_tile = ppu_internal_bus_read(0x2000 | (V.value & 0x0FFF));

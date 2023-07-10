@@ -98,7 +98,6 @@ void write6502(uint16_t address, uint8_t value) {
 	}
 }
 
-pixformat_t framebuffer[256 * 240];
 size_t cpu_timer = 0;
 
 void tick_frame() {
@@ -120,11 +119,29 @@ void tick_frame() {
 	}
 }
 
+void reset_machine() {
+	reset6502();
+	clockticks6502 = 0;
+	cpu_timer = 0;
+	for (size_t i = 0; i < 256 * 240; i++) {
+		framebuffer[i].r <<= 1;
+		framebuffer[i].g <<= 1;
+		framebuffer[i].b <<= 1;
+	}
+
+	for (size_t i = 0; i < sizeof(ciram); i++) {
+		ciram[i] <<= 1;
+	}
+	for (size_t i = 0; i < sizeof(cpuram); i++) {
+		cpuram[i] <<= 1;
+	}
+}
+
 void load_ines(char* path) {
 	if (ines.prg_rom_banks != NULL) {
 		free_ines(&ines);
 	}
-	
+
 	read_ines(path, &ines);
 
 	if (ines.mapper_number == 0) {
@@ -140,23 +157,20 @@ void load_ines(char* path) {
 		cartridge_ppuWrite = unrom_ppuWrite;
 	}
 
-	reset6502();
+	reset_machine();
 }
 
-int APIENTRY WinMain(
-	HINSTANCE hInstance,
-	HINSTANCE hPrevInstance,
-	LPSTR     lpCmdLine,
-	int       nShowCmd
-) {
-	load_ines("smb.nes");
+bool running = true;
+static HGLRC ourOpenGLRenderingContext;
 
-	/*disassembler_offset = 0x8000;
-	for (int i = 0; i < 20; i++) {
-		disassemble();
-	}*/
+DWORD WINAPI render_thread(void* param) {
+	ourOpenGLRenderingContext = wglCreateContext(window_dc);
+	wglMakeCurrent(window_dc, ourOpenGLRenderingContext);
 
-	create_window();
+	ULONGLONG last = GetTickCount64();
+	ULONGLONG now = last;
+	ULONGLONG accum = 0;
+	ULONGLONG dt = 16;
 
 	glEnable(GL_TEXTURE_2D);
 
@@ -169,27 +183,15 @@ int APIENTRY WinMain(
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 256, 240, 0, GL_RGB, GL_UNSIGNED_BYTE, framebuffer);
 
-	ULONGLONG last = GetTickCount64();
-	ULONGLONG now = last;
-	ULONGLONG accum = 0;
-	ULONGLONG dt = 16;
-
-	MSG msg;
-	bool running = true;
 	while (running) {
-		while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
-			if (msg.message == WM_QUIT) {
-				running = false;
-			}
-
-			TranslateMessage(&msg);
-			DispatchMessage(&msg);
-		}
-
 		now = GetTickCount64();
 		ULONGLONG delta = now - last;
 		last = now;
 		accum += delta;
+
+		/*if (accum < dt) {
+			Sleep(1);
+		}*/
 
 		bool needs_rerender = false;
 		while (accum >= dt) {
@@ -208,10 +210,54 @@ int APIENTRY WinMain(
 			glEnd();
 
 			SwapBuffers(window_dc);
+		} else {
+			Sleep(1);
 		}
 
-		Sleep(0);
+		if (needs_resize) {
+			glViewport(new_width / 2 - new_size / 2, new_height / 2 - new_size / 2, new_size, new_size);
+			glClear(GL_COLOR_BUFFER_BIT);
+			needs_resize = false;
+		}
 	}
+
+
+	wglDeleteContext(ourOpenGLRenderingContext);
+
+	return 0;
+}
+
+int APIENTRY WinMain(
+	HINSTANCE hInstance,
+	HINSTANCE hPrevInstance,
+	LPSTR     lpCmdLine,
+	int       nShowCmd
+) {
+	load_ines("ducktales.nes");
+
+	/*disassembler_offset = 0x8000;
+	for (int i = 0; i < 20; i++) {
+		disassemble();
+	}*/
+
+	create_window();
+
+	HANDLE threadId = CreateThread(NULL, 0, render_thread, NULL, 0, NULL);
+
+	MSG msg;
+	while (running) {
+		GetMessage(&msg, NULL, 0, 0);
+
+		if (msg.message == WM_QUIT) {
+			running = false;
+		}
+
+		TranslateMessage(&msg);
+		DispatchMessage(&msg);
+
+	}
+
+	WaitForSingleObject(threadId, 0);
 
 	free_ines(&ines);
 }

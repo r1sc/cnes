@@ -7,6 +7,11 @@
 extern HWND hwnd;
 extern HDC window_dc;
 
+extern bool needs_resize;
+extern int new_size;
+extern unsigned int new_width;
+extern unsigned int new_height;
+
 #define NES_VK_RIGHT (1 << 7)
 #define NES_VK_LEFT (1 << 6)
 #define NES_VK_DOWN (1 << 5)

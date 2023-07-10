@@ -1,12 +1,9 @@
 #include <Windows.h>
-#include <gl/GL.h>
 #include "fake6502.h"
-
 #include "window.h"
 
 HWND hwnd;
 HDC window_dc;
-static HGLRC ourOpenGLRenderingContext;
 
 unsigned int keymap[8] = { 'X', 'Z', 'A', 'S', VK_UP, VK_DOWN, VK_LEFT,  VK_RIGHT };
 uint8_t keysdown;
@@ -14,40 +11,17 @@ uint8_t keysdown;
 HMENU menu;
 
 extern void load_ines(char* path);
+extern void reset_machine();
+
+bool needs_resize;
+int new_size;
+unsigned int new_width;
+unsigned int new_height;
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
 	switch (message) {
 		case WM_CREATE:
 		{
-			PIXELFORMATDESCRIPTOR pfd =
-			{
-				sizeof(PIXELFORMATDESCRIPTOR),
-				1,
-				PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER,    //Flags
-				PFD_TYPE_RGBA,        // The kind of framebuffer. RGBA or palette.
-				32,                   // Colordepth of the framebuffer.
-				0, 0, 0, 0, 0, 0,
-				0,
-				0,
-				0,
-				0, 0, 0, 0,
-				24,                   // Number of bits for the depthbuffer
-				8,                    // Number of bits for the stencilbuffer
-				0,                    // Number of Aux buffers in the framebuffer.
-				PFD_MAIN_PLANE,
-				0,
-				0, 0, 0
-			};
-
-			window_dc = GetDC(hWnd);
-
-			int  letWindowsChooseThisPixelFormat;
-			letWindowsChooseThisPixelFormat = ChoosePixelFormat(window_dc, &pfd);
-			SetPixelFormat(window_dc, letWindowsChooseThisPixelFormat, &pfd);
-
-			ourOpenGLRenderingContext = wglCreateContext(window_dc);
-			wglMakeCurrent(window_dc, ourOpenGLRenderingContext);
-
 			menu = CreateMenu();
 
 			HMENU fileMenu = CreateMenu();
@@ -64,20 +38,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 		break;
 		case WM_CLOSE:
 		{
-			wglDeleteContext(ourOpenGLRenderingContext);
 			PostQuitMessage(0);
 		}
 		break;
 		case WM_SIZE:
-		{
-			UINT width = LOWORD(lParam);
-			UINT height = HIWORD(lParam);
+		{			
+			new_width = LOWORD(lParam);
+			new_height = HIWORD(lParam);
 
-			int size = width;
-			if (width > height) {
-				size = height;
+			new_size = new_width;
+			if (new_width > new_height) {
+				new_size = new_height;
 			}
-			glViewport(width / 2 - size / 2, height / 2 - size / 2, size, size);
+			needs_resize = true;
 		}
 		break;
 		case WM_KEYDOWN:
@@ -113,8 +86,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 				if (GetOpenFileName(&o)) {
 					load_ines(szFile);
 				}
-			} else if (which == 3) {
-				reset6502();
+			} else if (which == 3) {				
+				reset_machine();
 			}
 		}
 		break;
@@ -139,7 +112,40 @@ void create_window() {
 
 	RECT rect = { 0, 0, 512, 512 };
 	AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, true);
+	LONG width = rect.right - rect.left;
+	LONG height = rect.bottom - rect.top;
 
-	hwnd = CreateWindow(wc.lpszClassName, "cnes", WS_OVERLAPPEDWINDOW | WS_VISIBLE, 0, 0, rect.right - rect.left, rect.bottom - rect.top, 0, 0, hInstance, 0);
+	hwnd = CreateWindow(
+		wc.lpszClassName, 
+		"cnes", 
+		WS_OVERLAPPEDWINDOW | WS_VISIBLE, 
+		GetSystemMetrics(SM_CXSCREEN) / 2 - width / 2, 
+		GetSystemMetrics(SM_CYSCREEN) / 2 - height / 2, 
+		width, height, 0, 0, hInstance, 0);
 
+	PIXELFORMATDESCRIPTOR pfd =
+	{
+		sizeof(PIXELFORMATDESCRIPTOR),
+		1,
+		PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER,    //Flags
+		PFD_TYPE_RGBA,        // The kind of framebuffer. RGBA or palette.
+		32,                   // Colordepth of the framebuffer.
+		0, 0, 0, 0, 0, 0,
+		0,
+		0,
+		0,
+		0, 0, 0, 0,
+		24,                   // Number of bits for the depthbuffer
+		8,                    // Number of bits for the stencilbuffer
+		0,                    // Number of Aux buffers in the framebuffer.
+		PFD_MAIN_PLANE,
+		0,
+		0, 0, 0
+	};
+
+	window_dc = GetDC(hwnd);
+
+	int  letWindowsChooseThisPixelFormat;
+	letWindowsChooseThisPixelFormat = ChoosePixelFormat(window_dc, &pfd);
+	SetPixelFormat(window_dc, letWindowsChooseThisPixelFormat, &pfd);
 }
