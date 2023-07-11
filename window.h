@@ -5,7 +5,6 @@
 #include <stdint.h>
 
 extern HWND hwnd;
-extern HDC window_dc;
 
 extern bool needs_resize;
 extern int new_size;

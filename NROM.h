@@ -42,8 +42,8 @@ uint8_t nrom_cpuRead(uint16_t address) {
 	uint8_t bank_no = address >> 14;
 
 	uint8_t bank_no_from_right = 3 - bank_no;
-	int bank_index = ines.prg_rom_size_16k_chunks - 1 - bank_no_from_right;
-	assert(bank_index >= 0);
+	int bank_index = bank_no_from_right >= ines.prg_rom_size_16k_chunks ? 0 : ines.prg_rom_size_16k_chunks - 1 - bank_no_from_right;
+	//assert(bank_index >= 0);
 
 	return ines.prg_rom_banks[bank_index][address & 0x3FFF];
 }

@@ -2,225 +2,241 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdlib.h>
-#include <gl/GL.h>
+#include <string.h>
+#include <stdio.h>
+#include <dwmapi.h>
 
 #include "window.h"
-#include "fake6502.h"
-#include "ines.h"
 #include "ppu.h"
-#include "cartridge.h"
-#include "bit.h"
-#include "NROM.h"
-#include "UNROM.h"
-#include "disasm.h"
-
-bus_read_t cartridge_cpuRead;
-bus_write_t cartridge_cpuWrite;
-bus_read_t cartridge_ppuRead;
-bus_write_t cartridge_ppuWrite;
-
-ines_t ines = { 0 };
-uint8_t ciram[2048];
-uint8_t cpuram[2048];
-
-uint8_t controller_status = 0xFF;
-
-uint8_t read6502(uint16_t address) {
-	if (address == 0x4016) {
-		uint8_t value = controller_status & 1;
-		controller_status >>= 1;
-		return value;
-	} else if ((address >= 0x4000 && address <= 0x4013) || address == 0x4015 || address == 0x4017) {
-		// APU
-		return 0;
-	}
-
-	bool cpu_a15 = (address & BIT_15) != 0;
-	bool cpu_a14 = (address & BIT_14) != 0;
-	bool cpu_a13 = (address & BIT_13) != 0;
-	bool romsel = cpu_a15;
-
-	if (!romsel) {
-		bool ppu_cs = !cpu_a14 && cpu_a13;
-		bool cpu_ram_cs = !cpu_a14 && !cpu_a13;
-
-		if (ppu_cs) {
-			return cpu_ppu_bus_read(address & 7);
-		} else if (cpu_ram_cs) {
-			return cpuram[address & 0x7FF];
-		}
-	}
-	return cartridge_cpuRead(address);
-}
-
-//static GLFWwindow* window;
-extern size_t cpu_timer;
-
-void write6502(uint16_t address, uint8_t value) {
-	if (address == 0x4014) {
-		// DMA
-		uint16_t page = value << 8;
-		for (uint16_t i = 0; i < 256; i++) {
-			cpu_ppu_bus_write(4, read6502(page | i));
-		}
-		cpu_timer += 513;
-	} else if (address == 0x4016) {
-		controller_status = keysdown;
-		//controller_status = (glfwGetKey(window, GLFW_KEY_RIGHT) << 7)
-		//	| (glfwGetKey(window, GLFW_KEY_LEFT) << 6)
-		//	| (glfwGetKey(window, GLFW_KEY_DOWN) << 5)
-		//	| (glfwGetKey(window, GLFW_KEY_UP) << 4)
-		//	| (glfwGetKey(window, GLFW_KEY_S) << 3) // Start
-		//	| (glfwGetKey(window, GLFW_KEY_A) << 2) // Select
-		//	| (glfwGetKey(window, GLFW_KEY_Z) << 1) // B
-		//	| (glfwGetKey(window, GLFW_KEY_X) << 0); // A
-
-	} else if ((address >= 0x4000 && address <= 0x4013) || address == 0x4015 || address == 0x4017) {
-		;
-	} else {
-		bool cpu_a15 = (address & BIT_15) != 0;
-		bool cpu_a14 = (address & BIT_14) != 0;
-		bool cpu_a13 = (address & BIT_13) != 0;
-		bool romsel = cpu_a15;
-
-		if (!romsel) {
-			bool ppu_cs = !cpu_a14 && cpu_a13;
-			bool cpu_ram_cs = !cpu_a14 && !cpu_a13;
-
-			if (ppu_cs) {
-				cpu_ppu_bus_write(address & 7, value);
-			} else if (cpu_ram_cs) {
-				cpuram[address & 0x7FF] = value;
-			}
-		} else {
-			cartridge_cpuWrite(address, value);
-		}
-	}
-}
-
-size_t cpu_timer = 0;
-
-void tick_frame() {
-	scanline = -1;
-	while (scanline <= 260) {
-		dot = 0;
-		while (dot <= 340) {
-			if (cpu_timer == 0) {
-				step6502();
-				cpu_timer = clockticks6502 * 3;
-			} else {
-				cpu_timer--;
-			}
-
-			tick();
-			dot++;
-		}
-		scanline++;
-	}
-}
-
-void reset_machine() {
-	reset6502();
-	clockticks6502 = 0;
-	cpu_timer = 0;
-	for (size_t i = 0; i < 256 * 240; i++) {
-		framebuffer[i].r <<= 1;
-		framebuffer[i].g <<= 1;
-		framebuffer[i].b <<= 1;
-	}
-
-	for (size_t i = 0; i < sizeof(ciram); i++) {
-		ciram[i] <<= 1;
-	}
-	for (size_t i = 0; i < sizeof(cpuram); i++) {
-		cpuram[i] <<= 1;
-	}
-}
-
-void load_ines(char* path) {
-	if (ines.prg_rom_banks != NULL) {
-		free_ines(&ines);
-	}
-
-	read_ines(path, &ines);
-
-	if (ines.mapper_number == 0) {
-
-		cartridge_cpuRead = nrom_cpuRead;
-		cartridge_cpuWrite = nrom_cpuWrite;
-		cartridge_ppuRead = nrom_ppuRead;
-		cartridge_ppuWrite = nrom_ppuWrite;
-	} else if (ines.mapper_number == 2) {
-		cartridge_cpuRead = unrom_cpuRead;
-		cartridge_cpuWrite = unrom_cpuWrite;
-		cartridge_ppuRead = unrom_ppuRead;
-		cartridge_ppuWrite = unrom_ppuWrite;
-	}
-
-	reset_machine();
-}
+#include "ines.h"
+#include "glstuff/glad.h"
+#include "glstuff/wglext.h"
+#include "nes001.h"
 
 bool running = true;
 static HGLRC ourOpenGLRenderingContext;
 
-DWORD WINAPI render_thread(void* param) {
-	ourOpenGLRenderingContext = wglCreateContext(window_dc);
-	wglMakeCurrent(window_dc, ourOpenGLRenderingContext);
+GLuint load_shader(const char* shader_src, GLenum kind) {
 
-	ULONGLONG last = GetTickCount64();
-	ULONGLONG now = last;
-	ULONGLONG accum = 0;
-	ULONGLONG dt = 16;
+	const GLchar* strings[] = {
+		"#version 300 es\n\0",
+		kind == GL_VERTEX_SHADER ? "#define VS\n\0" : "#define FS\n\0",
+		shader_src
+	};
+
+	GLuint shader = glCreateShader(kind);
+	glShaderSource(shader, 3, strings, NULL);
+
+	glCompileShader(shader);
+
+	GLint compile_status;
+	glGetShaderiv(shader, GL_COMPILE_STATUS, &compile_status);
+	if (!compile_status) {
+		GLchar infoLog[256];
+		GLsizei actualLength;
+		glGetShaderInfoLog(shader, 256, &actualLength, infoLog);
+		MessageBox(hwnd, infoLog, "Shader compile error", MB_ICONERROR);
+		exit(1);
+	}
+
+	return shader;
+}
+
+GLuint link_program(const char* src) {
+	GLuint program = glCreateProgram();
+	glAttachShader(program, load_shader(src, GL_VERTEX_SHADER));
+	glAttachShader(program, load_shader(src, GL_FRAGMENT_SHADER));
+
+	glLinkProgram(program);
+
+	GLint link_status;
+	glGetProgramiv(program, GL_LINK_STATUS, &link_status);
+	if (!link_status) {
+		GLchar infoLog[256];
+		GLsizei actualLength;
+		glGetProgramInfoLog(program, 256, &actualLength, infoLog);
+		MessageBox(hwnd, infoLog, "Shader program link error", MB_ICONERROR);
+		exit(1);
+	}
+
+	return program;
+}
+
+GLuint load_shader_program_from_disk(const char* path) {
+	FILE* f;
+	if (fopen_s(&f, path, "rb")) {
+		MessageBox(hwnd, "Failed to load shader", "Error", 0);
+		exit(1);
+	}
+
+	fseek(f, 0, SEEK_END);
+	long size = ftell(f);
+	fseek(f, 0, SEEK_SET);
+
+	char* src = (char*)malloc(size + 1);
+	ZeroMemory(src, size + 1);
+	fread(src, size, 1, f);
+	fclose(f);
+
+	return link_program(src);
+}
+
+static HDC window_dc;
+
+DWORD WINAPI render_thread(void* param) {
+	PIXELFORMATDESCRIPTOR pfd =
+	{
+		sizeof(PIXELFORMATDESCRIPTOR),
+		1,
+		PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER,    //Flags
+		PFD_TYPE_RGBA,        // The kind of framebuffer. RGBA or palette.
+		32,                   // Colordepth of the framebuffer.
+		0, 0, 0, 0, 0, 0,
+		0,
+		0,
+		0,
+		0, 0, 0, 0,
+		24,                   // Number of bits for the depthbuffer
+		8,                    // Number of bits for the stencilbuffer
+		0,                    // Number of Aux buffers in the framebuffer.
+		PFD_MAIN_PLANE,
+		0,
+		0, 0, 0
+	};
+
+	window_dc = GetDC(hwnd);
+
+	int  letWindowsChooseThisPixelFormat;
+	letWindowsChooseThisPixelFormat = ChoosePixelFormat(window_dc, &pfd);
+	SetPixelFormat(window_dc, letWindowsChooseThisPixelFormat, &pfd);
+
+	HGLRC fakeContext = wglCreateContext(window_dc);
+	wglMakeCurrent(window_dc, fakeContext);
+
+	PFNWGLSWAPINTERVALEXTPROC wglSwapIntervalEXT = (PFNWGLSWAPINTERVALEXTPROC)wglGetProcAddress("wglSwapIntervalEXT");
+
+	wglSwapIntervalEXT(0);
+	int attribs[] =
+	{
+		WGL_CONTEXT_MAJOR_VERSION_ARB, 3,
+		WGL_CONTEXT_MINOR_VERSION_ARB, 2,
+		WGL_CONTEXT_FLAGS_ARB, 0,
+		WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
+		0
+	};
+	PFNWGLCREATECONTEXTATTRIBSARBPROC wglCreateContextAttribsARB = (PFNWGLCREATECONTEXTATTRIBSARBPROC)wglGetProcAddress("wglCreateContextAttribsARB");
+	ourOpenGLRenderingContext = wglCreateContextAttribsARB(window_dc, NULL, attribs);
+
+	wglMakeCurrent(NULL, NULL);
+	wglDeleteContext(fakeContext);
+	wglMakeCurrent(window_dc, ourOpenGLRenderingContext);
+	wglSwapIntervalEXT(0);
+
+	gladLoadGL();
+
+	GLuint program = load_shader_program_from_disk("shaders/crt.glsl");
+	glUseProgram(program);
 
 	glEnable(GL_TEXTURE_2D);
+	glDisable(GL_CULL_FACE);
 
 	GLuint texture;
 	glGenTextures(1, &texture);
 	glBindTexture(GL_TEXTURE_2D, texture);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 256, 240, 0, GL_RGB, GL_UNSIGNED_BYTE, framebuffer);
 
+	GLuint vao;
+	glGenVertexArrays(1, &vao);
+	glBindVertexArray(vao);
+
+	// x y u v
+	int vertex_data[] = {
+		-1, 1, 0, 0,
+		1, 1, 1, 0,
+		1, -1, 1, 1,
+		-1, -1, 0, 1
+	};
+
+	GLuint vertex_buffer;
+	glGenBuffers(1, &vertex_buffer);
+	glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(vertex_data), vertex_data, GL_STATIC_DRAW);
+
+	unsigned short indices[] = {
+		0, 1, 2,
+		0, 2, 3
+	};
+
+	GLuint index_buffer;
+	glGenBuffers(1, &index_buffer);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, index_buffer);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 2, GL_INT, false, 4 * 4, (GLvoid*)0);
+
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(1, 2, GL_INT, false, 4 * 4, (GLvoid*)8);
+
+	double last = (double)GetTickCount64();
+	double  now = last;
+	double  accum = 0;
+	double  dt = 1000.0 / 60.0;
+
+	int frame_counter = 0;
+	int fps = 0;
+	double secondacc = 0;
+	int num_frames = 0;
+
 	while (running) {
-		now = GetTickCount64();
-		ULONGLONG delta = now - last;
+		now = (double)GetTickCount64();
+		double delta = now - last;
 		last = now;
 		accum += delta;
+		secondacc += delta;
 
-		/*if (accum < dt) {
-			Sleep(1);
-		}*/
-
-		bool needs_rerender = false;
-		while (accum >= dt) {
-			tick_frame();
-			needs_rerender = true;
-			accum -= dt;
+		if (secondacc >= 1000) {
+			fps = frame_counter;
+			char title[128];
+			sprintf(title, "cnes - (%d fps = %d frames / sec)\0", fps, num_frames);
+			SetWindowText(hwnd, title);
+			frame_counter = 0;
+			num_frames = 0;
+			secondacc -= 1000;
 		}
 
-		if (needs_rerender) {
-			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 240, GL_RGB, GL_UNSIGNED_BYTE, framebuffer);
-			glBegin(GL_QUADS);
-			glTexCoord2i(0, 0); glVertex2i(-1, 1);
-			glTexCoord2i(1, 0); glVertex2i(1, 1);
-			glTexCoord2i(1, 1); glVertex2i(1, -1);
-			glTexCoord2i(0, 1); glVertex2i(-1, -1);
-			glEnd();
+		bool needs_rerender = false;
+		if (accum >= dt) {
+			needs_rerender = true;
 
-			SwapBuffers(window_dc);
+			while (accum >= dt) {
+				tick_frame();
+				num_frames++;
+				accum -= dt;
+			}
 		} else {
 			Sleep(1);
 		}
 
-		if (needs_resize) {
-			glViewport(new_width / 2 - new_size / 2, new_height / 2 - new_size / 2, new_size, new_size);
-			glClear(GL_COLOR_BUFFER_BIT);
-			needs_resize = false;
-		}
-	}
+		if (needs_rerender) {
+			frame_counter++;
+			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 240, GL_RGB, GL_UNSIGNED_BYTE, framebuffer);
+			glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, NULL);
+			SwapBuffers(window_dc);
+			glFinish();
 
+
+			if (needs_resize) {
+				glViewport(new_width / 2 - new_size / 2, new_height / 2 - new_size / 2, new_size, new_size);
+				glClear(GL_COLOR_BUFFER_BIT);
+				needs_resize = false;
+			}
+		}		
+	}
 
 	wglDeleteContext(ourOpenGLRenderingContext);
 
@@ -233,12 +249,9 @@ int APIENTRY WinMain(
 	LPSTR     lpCmdLine,
 	int       nShowCmd
 ) {
-	load_ines("ducktales.nes");
-
-	/*disassembler_offset = 0x8000;
-	for (int i = 0; i < 20; i++) {
-		disassemble();
-	}*/
+	char cwd[256];
+	GetCurrentDirectoryA(256, cwd);
+	load_ines("roms/smb.nes");
 
 	create_window();
 
@@ -259,5 +272,5 @@ int APIENTRY WinMain(
 
 	WaitForSingleObject(threadId, 0);
 
-	free_ines(&ines);
+	free_ines();
 }

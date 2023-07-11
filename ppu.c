@@ -93,14 +93,6 @@ void ppu_internal_bus_write(uint16_t address, uint8_t value) {
 	}
 }
 
-uint8_t ppu_internal_bus_read(uint16_t address) {
-	if (address >= 0x3F00) {
-		// Palette control
-		uint8_t index = address & 0x3;
-		return palette[index == 0 ? 0 : (address & 0x1F)];
-	}
-	return cartridge_ppuRead(address);
-}
 
 uint8_t ppudata_buffer = 0;
 uint8_t cpu_ppu_bus_read(uint8_t address) {
@@ -117,7 +109,7 @@ uint8_t cpu_ppu_bus_read(uint8_t address) {
 			break;
 		case 7:
 			value = ppudata_buffer;
-			ppudata_buffer = ppu_internal_bus_read(V.value);
+			ppudata_buffer = cartridge_ppuRead(V.value);
 
 			if (V.value >= 0x3f00) value = ppudata_buffer; // Do not delay palette reads
 
@@ -201,11 +193,11 @@ int dot = 0;
 pixformat_t framebuffer[256 * 240];
 
 inline void nametable_fetch() {
-	next_tile = ppu_internal_bus_read(0x2000 | (V.value & 0x0FFF));
+	next_tile = cartridge_ppuRead(0x2000 | (V.value & 0x0FFF));
 }
 
 inline void attribute_fetch() {
-	next_attribute = ppu_internal_bus_read(0x23C0 | (V.value & 0x0C00) | ((V.value >> 4) & 0x38) | ((V.value >> 2) & 0x07));
+	next_attribute = cartridge_ppuRead(0x23C0 | (V.value & 0x0C00) | ((V.value >> 4) & 0x38) | ((V.value >> 2) & 0x07));
 	if (V.coarse_y_scroll & 2) next_attribute >>= 4;
 	if (V.coarse_x_scroll & 2) next_attribute >>= 2;
 	next_attribute &= 0b11;
@@ -217,12 +209,12 @@ inline void bg_lsb_fetch() {
 	nametable_address.tile_lo = next_tile & 0xF;
 	nametable_address.tile_hi = (next_tile >> 4) & 0xF;
 	nametable_address.pattern_table_half = PPUCTRL.background_pattern_table_address;
-	next_pattern_lsb = ppu_internal_bus_read(nametable_address.value);
+	next_pattern_lsb = cartridge_ppuRead(nametable_address.value);
 }
 
 inline void bg_msb_fetch() {
 	nametable_address.bit_plane = 1;
-	next_pattern_msb = ppu_internal_bus_read(nametable_address.value);
+	next_pattern_msb = cartridge_ppuRead(nametable_address.value);
 }
 
 void inc_horiz() {
@@ -264,196 +256,207 @@ void load_shifters() {
 	attrib_1 |= ((next_attribute & 2) ? 0xFF : 0);
 }
 
-void tick() {
-
-	if (scanline <= 239) {
-		if (scanline == -1 && dot == 1) {
-			PPUSTATUS.vertical_blank_started = 0;
-			PPUSTATUS.sprite_overflow = 0;
-			PPUSTATUS.sprite_0_hit = 0;
-		}
-
-		if ((dot >= 2 && dot < 258) || (dot >= 321 && dot < 338)) {
-			if (PPUMASK.show_background) {
-				pattern_plane_0 <<= 1;
-				pattern_plane_1 <<= 1;
-				attrib_0 <<= 1;
-				attrib_1 <<= 1;
+size_t cpu_timer = 0;
+void tick_frame() {
+	for (scanline = -1; scanline <= 260; scanline++) {
+		for (dot = 0; dot <= 340; dot++) {
+			if (cpu_timer == 0) {
+				step6502();
+				cpu_timer = clockticks6502 + clockticks6502 + clockticks6502;
+			} else {
+				cpu_timer--;
 			}
 
-			switch ((dot - 1) % 8) {
-				case 0:
+			if (scanline <= 239) {
+				if (scanline == -1 && dot == 1) {
+					PPUSTATUS.vertical_blank_started = 0;
+					PPUSTATUS.sprite_overflow = 0;
+					PPUSTATUS.sprite_0_hit = 0;
+				}
+
+				if ((dot >= 2 && dot < 258) || (dot >= 321 && dot < 338)) {
+					if (PPUMASK.show_background) {
+						pattern_plane_0 <<= 1;
+						pattern_plane_1 <<= 1;
+						attrib_0 <<= 1;
+						attrib_1 <<= 1;
+					}
+
+					switch ((dot - 1) % 8) {
+						case 0:
+							load_shifters();
+							nametable_fetch();
+							break;
+						case 2:
+							attribute_fetch();
+							break;
+						case 4:
+							bg_lsb_fetch();
+							break;
+						case 6:
+							bg_msb_fetch();
+							break;
+						case 7:
+							inc_horiz();
+							break;
+					}
+				}
+
+
+				if (dot == 256) {
+					inc_vert();
+				} else if (dot == 257) {
 					load_shifters();
+
+					if (PPUMASK.show_background || PPUMASK.show_sprites) {
+						V.horizontal_nametable = T.horizontal_nametable;
+						V.coarse_x_scroll = T.coarse_x_scroll;
+					}
+
+					if (PPUMASK.show_sprites) {
+						for (size_t i = 0; i < 8; i++) {
+							temp_oam[i].x = 0xFF;
+							temp_oam[i].y = 0xFF;
+							temp_oam[i].attributes = 0xFF;
+							temp_oam[i].tile_index = 0xFF;
+						}
+
+						num_sprites_on_row = 0;
+
+						if (PPUMASK.show_sprites) {
+							for (size_t i = 0; i < 64; i++) {
+								int delta_y = scanline - (int)OAM[i].y;
+								if (delta_y >= 0 && delta_y < 8) {
+									if (num_sprites_on_row < 8) {
+										temp_oam[num_sprites_on_row].y = OAM[i].y;
+										temp_oam[num_sprites_on_row].x = OAM[i].x;
+										temp_oam[num_sprites_on_row].tile_index = OAM[i].tile_index;
+										temp_oam[num_sprites_on_row].attributes = OAM[i].attributes;
+										num_sprites_on_row++;
+										if (num_sprites_on_row == 8) {
+											PPUSTATUS.sprite_overflow = 1;
+										}
+									}
+								}
+							}
+						}
+					}
+				} else if (dot == 338) {
 					nametable_fetch();
-					break;
-				case 2:
-					attribute_fetch();
-					break;
-				case 4:
-					bg_lsb_fetch();
-					break;
-				case 6:
-					bg_msb_fetch();
-					break;
-				case 7:
-					inc_horiz();
-					break;
-			}
-		}
+				} else if (dot == 340) {
+					nametable_fetch();
+					if (PPUMASK.show_sprites) {
+						for (size_t i = 0; i < num_sprites_on_row; i++) {
+							nametable_address.fine_y_offset = (uint8_t)(scanline - (int)temp_oam[i].y);
+							bool flipped_y = (temp_oam[i].attributes & 0x80) != 0;
+							if (flipped_y) {
+								nametable_address.fine_y_offset = (uint8_t)(7 - nametable_address.fine_y_offset);
+							}
 
+							nametable_address.bit_plane = 0;
+							nametable_address.tile_lo = temp_oam[i].tile_index & 0xF;
+							nametable_address.tile_hi = (temp_oam[i].tile_index >> 4) & 0xF;
+							nametable_address.pattern_table_half = PPUCTRL.sprite_pattern_table_address;
+							sprite_lsb[i] = cartridge_ppuRead(nametable_address.value);
 
-		if (dot == 256) {
-			inc_vert();
-		} else if (dot == 257) {
-			load_shifters();
-
-			if (PPUMASK.show_background || PPUMASK.show_sprites) {
-				V.horizontal_nametable = T.horizontal_nametable;
-				V.coarse_x_scroll = T.coarse_x_scroll;
-			}
-
-			if (PPUMASK.show_sprites) {
-				for (size_t i = 0; i < 8; i++) {
-					temp_oam[i].x = 0xFF;
-					temp_oam[i].y = 0xFF;
-					temp_oam[i].attributes = 0xFF;
-					temp_oam[i].tile_index = 0xFF;
+							nametable_address.bit_plane = 1;
+							sprite_msb[i] = cartridge_ppuRead(nametable_address.value);
+						}
+					}
 				}
 
-				num_sprites_on_row = 0;
+				if (PPUMASK.show_background && scanline == -1 && dot >= 280 && dot <= 304) {
+					V.coarse_y_scroll = T.coarse_y_scroll;
+					V.fine_y_scroll = T.fine_y_scroll;
+					V.vertical_nametable = T.vertical_nametable;
+				}
 
-				if (PPUMASK.show_sprites) {
-					for (size_t i = 0; i < 64; i++) {
-						int delta_y = scanline - (int)OAM[i].y;
-						if (delta_y >= 0 && delta_y < 8) {
-							if (num_sprites_on_row < 8) {
-								temp_oam[num_sprites_on_row].y = OAM[i].y;
-								temp_oam[num_sprites_on_row].x = OAM[i].x;
-								temp_oam[num_sprites_on_row].tile_index = OAM[i].tile_index;
-								temp_oam[num_sprites_on_row].attributes = OAM[i].attributes;
-								num_sprites_on_row++;
-								if (num_sprites_on_row == 8) {
-									PPUSTATUS.sprite_overflow = 1;
+				if (scanline >= 0 && dot >= 1 && dot <= 256) {
+					uint8_t bg_pixel = 0;
+					uint8_t bg_palette = 0;
+
+					if (PPUMASK.show_background) {
+						uint16_t bit = 0x8000 >> fine_x_scroll;
+
+						uint8_t lo_bit = (pattern_plane_0 & bit) ? 1 : 0;
+						uint8_t hi_bit = (pattern_plane_1 & bit) ? 1 : 0;
+						bg_pixel = (hi_bit << 1) | lo_bit;
+
+						uint8_t attr_lo = (attrib_0 & bit) ? 1 : 0;
+						uint8_t attr_hi = (attrib_1 & bit) ? 1 : 0;
+						bg_palette = (attr_hi << 3) | (attr_lo << 2);
+					}
+
+					int first_found = -1;
+					uint8_t sprite_pixel = 0;
+					uint8_t sprite_palette = 0;
+
+					if (PPUMASK.show_sprites) {
+						for (int sprite_n = 0; sprite_n < num_sprites_on_row; sprite_n++) {
+							if (temp_oam[sprite_n].x == 0) {
+								bool flipped_x = (temp_oam[sprite_n].attributes & 0x40) != 0;
+								if (sprite_pixel == 0) {
+									uint8_t lo_bit = (sprite_lsb[sprite_n] & (flipped_x ? 1 : 0x80)) ? 1 : 0;
+									uint8_t hi_bit = (sprite_msb[sprite_n] & (flipped_x ? 1 : 0x80)) ? 1 : 0;
+									uint8_t pix = (hi_bit << 1) | lo_bit;
+
+									if (pix != 0) {
+										first_found = sprite_n;
+										if (sprite_n == 0 && bg_pixel != 0 && temp_oam[0].y == OAM[0].y) {
+											PPUSTATUS.sprite_0_hit = 1;
+										}
+
+										sprite_pixel = pix;
+										sprite_palette = (temp_oam[sprite_n].attributes & 0b11) << 2;
+									}
 								}
+
+								if (flipped_x) {
+									sprite_lsb[sprite_n] >>= 1;
+									sprite_msb[sprite_n] >>= 1;
+								} else {
+									sprite_lsb[sprite_n] <<= 1;
+									sprite_msb[sprite_n] <<= 1;
+								}
+							} else {
+								temp_oam[sprite_n].x--;
 							}
 						}
 					}
-				}
-			}
-		}
 
-		if (dot == 338 || dot == 340) {
-			nametable_fetch();
-		}
+					uint16_t output_palette_location = 0x00;
+					uint8_t output_pixel = bg_pixel;
+					uint8_t output_palette = bg_palette;
 
-		if (dot == 340) {
-			if (PPUMASK.show_sprites) {
-				for (size_t i = 0; i < num_sprites_on_row; i++) {
-					nametable_address.fine_y_offset = (uint8_t)(scanline - (int)temp_oam[i].y);
-					bool flipped_y = (temp_oam[i].attributes & 0x80) != 0;
-					if (flipped_y) {
-						nametable_address.fine_y_offset = (uint8_t)(7-nametable_address.fine_y_offset);
-					}
-					
-					nametable_address.bit_plane = 0;
-					nametable_address.tile_lo = temp_oam[i].tile_index & 0xF;
-					nametable_address.tile_hi = (temp_oam[i].tile_index >> 4) & 0xF;
-					nametable_address.pattern_table_half = PPUCTRL.sprite_pattern_table_address;
-					sprite_lsb[i] = ppu_internal_bus_read(nametable_address.value);
-
-					nametable_address.bit_plane = 1;
-					sprite_msb[i] = ppu_internal_bus_read(nametable_address.value);
-				}
-			}
-		}
-
-		if (PPUMASK.show_background && scanline == -1 && dot >= 280 && dot <= 304) {
-			V.coarse_y_scroll = T.coarse_y_scroll;
-			V.fine_y_scroll = T.fine_y_scroll;
-			V.vertical_nametable = T.vertical_nametable;
-		}
-
-		if (scanline >= 0 && dot >= 1 && dot <= 256) {
-			uint8_t bg_pixel = 0;
-			uint8_t bg_palette = 0;
-
-			if (PPUMASK.show_background) {
-				uint16_t bit = 0x8000 >> fine_x_scroll;
-
-				uint8_t lo_bit = (pattern_plane_0 & bit) ? 1 : 0;
-				uint8_t hi_bit = (pattern_plane_1 & bit) ? 1 : 0;
-				bg_pixel = (hi_bit << 1) | lo_bit;
-
-				uint8_t attr_lo = (attrib_0 & bit) ? 1 : 0;
-				uint8_t attr_hi = (attrib_1 & bit) ? 1 : 0;
-				bg_palette = (attr_hi << 3) | (attr_lo << 2);
-			}
-
-			int first_found = -1;
-			uint8_t sprite_pixel = 0;
-			uint8_t sprite_palette = 0;
-
-			if (PPUMASK.show_sprites) {
-				for (int sprite_n = 0; sprite_n < num_sprites_on_row; sprite_n++) {
-					if (temp_oam[sprite_n].x == 0) {
-						bool flipped_x = (temp_oam[sprite_n].attributes & 0x40) != 0;
-						if (sprite_pixel == 0) {
-							uint8_t lo_bit = (sprite_lsb[sprite_n] & (flipped_x ? 1 : 0x80)) ? 1 : 0;
-							uint8_t hi_bit = (sprite_msb[sprite_n] & (flipped_x ? 1 : 0x80)) ? 1 : 0;
-							uint8_t pix = (hi_bit << 1) | lo_bit;
-							
-							if (pix != 0) {
-								first_found = sprite_n;
-								if (sprite_n == 0 && bg_pixel != 0 && temp_oam[0].y == OAM[0].y) {
-									PPUSTATUS.sprite_0_hit = 1;
-								}
-
-								sprite_pixel = pix;
-								sprite_palette = (temp_oam[sprite_n].attributes & 0b11) << 2;
+					if (PPUMASK.show_sprites) {
+						if (bg_pixel == 0 && sprite_pixel != 0) {
+							output_pixel = sprite_pixel;
+							output_palette = sprite_palette;
+							output_palette_location = 0x10;
+						} else if (sprite_pixel != 0 && bg_pixel != 0) {
+							if (((temp_oam[first_found].attributes >> 5) & 1) == 0) {
+								output_pixel = sprite_pixel;
+								output_palette = sprite_palette;
+								output_palette_location = 0x10;
 							}
 						}
-
-						if (flipped_x) {
-							sprite_lsb[sprite_n] >>= 1;
-							sprite_msb[sprite_n] >>= 1;
-						} else {
-							sprite_lsb[sprite_n] <<= 1;
-							sprite_msb[sprite_n] <<= 1;
-						}
-					} else {
-						temp_oam[sprite_n].x--;
 					}
+
+					uint16_t palette_address = (uint16_t)(output_palette_location | output_palette | output_pixel);
+					uint8_t index = palette_address & 0x3;
+					uint8_t palette_index = palette[index == 0 ? 0 : (palette_address & 0x1F)];
+
+					pixformat_t* pixel = &framebuffer[(size_t)256 * scanline + (dot - 1)];
+					pixel->r = palette_colors[palette_index * 3 + 0];
+					pixel->g = palette_colors[palette_index * 3 + 1];
+					pixel->b = palette_colors[palette_index * 3 + 2];
+				}
+			} else if (scanline == 241 && dot == 1) {
+				PPUSTATUS.vertical_blank_started = 1;
+				if (PPUCTRL.gen_nmi_vblank) {
+					nmi6502();
 				}
 			}
-
-			uint16_t output_palette_location = 0x3F00;
-			uint8_t output_pixel = bg_pixel;
-			uint8_t output_palette = bg_palette;
-
-			if (PPUMASK.show_sprites) {
-				if (bg_pixel == 0 && sprite_pixel != 0) {
-					output_pixel = sprite_pixel;
-					output_palette = sprite_palette;
-					output_palette_location = 0x3F10;
-				} else if (sprite_pixel != 0 && bg_pixel != 0) {
-					if (((temp_oam[first_found].attributes >> 5) & 1) == 0) {
-						output_pixel = sprite_pixel;
-						output_palette = sprite_palette;
-						output_palette_location = 0x3F10;
-					}
-				}
-			}
-
-			uint8_t palette_index = ppu_internal_bus_read((uint16_t)(output_palette_location | output_palette | output_pixel));
-			pixformat_t* pixel = &framebuffer[(size_t)256 * scanline + (dot - 1)];
-			pixel->r = palette_colors[palette_index * 3 + 0];
-			pixel->g = palette_colors[palette_index * 3 + 1];
-			pixel->b = palette_colors[palette_index * 3 + 2];
-		}
-	} else if (scanline == 241 && dot == 1) {
-		PPUSTATUS.vertical_blank_started = 1;
-		if (PPUCTRL.gen_nmi_vblank) {
-			nmi6502();
 		}
 	}
 }
