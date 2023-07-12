@@ -25,27 +25,8 @@ void nrom_ppuWrite(uint16_t address, uint8_t value) {
 }
 
 uint8_t nrom_cpuRead(uint16_t address) {
-	// 4 banks in total 0-3
-	// banks are mapped right-to-left:
-	// 2 banks:
-	// 0x8000	0xC000
-	// 0		1
-	// 
-	// 1 bank:
-	// 0xC000
-	// 1
-	// 
-	// 3 banks:
-	// 0x4000	0x8000	0xC000
-	// 0		1		2
-
-	uint8_t bank_no = address >> 14;
-
-	uint8_t bank_no_from_right = 3 - bank_no;
-	int bank_index = bank_no_from_right >= ines.prg_rom_size_16k_chunks ? 0 : ines.prg_rom_size_16k_chunks - 1 - bank_no_from_right;
-	//assert(bank_index >= 0);
-
-	return ines.prg_rom_banks[bank_index][address & 0x3FFF];
+	uint8_t bank_no = (address >> 14) & 1;
+	return ines.prg_rom_banks[ines.prg_rom_size_16k_chunks == 1 ? 0 : bank_no][address & 0x3FFF];
 }
 
 void nrom_cpuWrite(uint16_t address, uint8_t value) {
