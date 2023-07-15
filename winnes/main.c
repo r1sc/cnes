@@ -4,14 +4,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-#include <dwmapi.h>
+#include <cnes.h>
 
 #include "window.h"
-#include "ppu.h"
-#include "ines.h"
 #include "glstuff/glad.h"
 #include "glstuff/wglext.h"
-#include "nes001.h"
 
 bool running = true;
 static HGLRC ourOpenGLRenderingContext;
@@ -202,7 +199,7 @@ DWORD WINAPI render_thread(void* param) {
 		if (secondacc >= 1000) {
 			fps = frame_counter;
 			char title[128];
-			sprintf(title, "cnes - (%d fps = %d frames / sec)\0", fps, num_frames);
+			sprintf(title, "WinNES - (%d fps = %d frames / sec)\0", fps, num_frames);
 			SetWindowText(hwnd, title);
 			frame_counter = 0;
 			num_frames = 0;
@@ -233,6 +230,10 @@ DWORD WINAPI render_thread(void* param) {
 			if (needs_resize) {
 				glViewport(new_width / 2 - new_size / 2, new_height / 2 - new_size / 2, new_size, new_size);
 				glClear(GL_COLOR_BUFFER_BIT);
+				SwapBuffers(window_dc);
+				glClear(GL_COLOR_BUFFER_BIT);
+				SwapBuffers(window_dc);
+
 				needs_resize = false;
 			}
 		}		
@@ -251,7 +252,7 @@ int APIENTRY WinMain(
 ) {
 	char cwd[256];
 	GetCurrentDirectoryA(256, cwd);
-	load_ines("roms/smb.nes");
+	load_ines("roms/balloon fight.nes");
 
 	create_window();
 
@@ -271,6 +272,4 @@ int APIENTRY WinMain(
 	}
 
 	WaitForSingleObject(threadId, 0);
-
-	free_ines();
 }

@@ -33,7 +33,10 @@ void main() {
     vec2 uvo = v_uv + offset;
         
     float tint = mix(1.0, u_darkness, smoothstep(0.0, 0.5, fract(uvo.y * u_num_lines)) - smoothstep(0.5, 1.0, fract(uvo.y * u_num_lines)));
-        
 	outColor = vec4(texture(u_image, uvo).rgb * tint, 1);
+
+    if(uvo.x < 0.0 || uvo.y < 0.0 || uvo.x >= 1.0 || uvo.y >= 1.0) {
+		outColor = vec4(0.0, 0.0, 0.0, 1.0);
+	}
 }    
 #endif

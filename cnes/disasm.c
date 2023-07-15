@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+
 #include "fake6502.h"
 
 uint16_t disassembler_offset;

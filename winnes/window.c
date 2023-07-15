@@ -1,21 +1,26 @@
 #include <Windows.h>
-#include "fake6502.h"
 #include "window.h"
+#include <cnes.h>
 
 HWND hwnd;
 
-unsigned int keymap[8] = { 'X', 'Z', 'A', 'S', VK_UP, VK_DOWN, VK_LEFT,  VK_RIGHT };
-uint8_t keysdown;
+unsigned int keymap[16] = { 'K', 'L', 'I', 'O', VK_UP, VK_DOWN, VK_LEFT,  VK_RIGHT, 'A', 'S', 'Q', 'W', 'T', 'G', 'F', 'H'};
+uint8_t buttons_down[2];
 
 HMENU menu;
-
-extern void load_ines(char* path);
-extern void reset_machine();
 
 bool needs_resize;
 int new_size;
 unsigned int new_width;
 unsigned int new_height;
+
+#define COMMAND_OPEN 1
+#define COMMAND_RESET 2
+#define COMMAND_ABOUT 3
+#define COMMAND_SAVE_STATE 4
+#define COMMAND_RESTORE_STATE 5
+
+static HMENU emuMenu;
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
 	switch (message) {
@@ -25,15 +30,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 
 			HMENU fileMenu = CreateMenu();
 			AppendMenu(menu, MF_STRING | MF_POPUP, (UINT_PTR)fileMenu, "File");
-			AppendMenu(fileMenu, MF_STRING, 2, "&Open...");
+			AppendMenu(fileMenu, MF_STRING, COMMAND_OPEN, "&Open...");
 
-			HMENU emuMenu = CreateMenu();
+			emuMenu = CreateMenu();
 			AppendMenu(menu, MF_STRING | MF_POPUP, (UINT_PTR)emuMenu, "Emulation");
-			AppendMenu(emuMenu, MF_STRING, 3, "Reset");
+			AppendMenu(emuMenu, MF_STRING, COMMAND_RESET, "Reset");
+			AppendMenu(emuMenu, MF_STRING, COMMAND_SAVE_STATE, "Save state");
+			AppendMenu(emuMenu, MF_STRING, COMMAND_RESTORE_STATE, "Restore state");
+
+			//EnableMenuItem(emuMenu, COMMAND_RESTORE_STATE, has_save_state ? MF_ENABLED : MF_GRAYED);
+
 
 			HMENU helpMenu = CreateMenu();
 			AppendMenu(menu, MF_STRING | MF_POPUP, (UINT_PTR)helpMenu, "Help");
-			AppendMenu(helpMenu, MF_STRING, 4, "About...");
+			AppendMenu(helpMenu, MF_STRING, COMMAND_ABOUT, "About...");
 
 			SetMenu(hWnd, menu);
 			DrawMenuBar(hWnd);
@@ -43,7 +53,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 		{
 			WORD which = LOWORD(wParam);
 			switch (which) {
-				case 2:
+				case COMMAND_OPEN:
 				{
 					char szFile[100] = { 0 };
 					OPENFILENAME o = { 0 };
@@ -55,15 +65,22 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 					o.nMaxFile = sizeof(szFile);
 					if (GetOpenFileName(&o)) {
 						load_ines(szFile);
+						//EnableMenuItem(emuMenu, COMMAND_RESTORE_STATE, has_save_state ? MF_ENABLED : MF_GRAYED);
 					}
 				}
 				break;
-				case 3:
+				case COMMAND_RESET:
 					reset_machine();
 					break;
-				case 4:
-					MessageBox(hwnd, "cnes 0.1 by r1sc 2023\n\nSupported mappers:\nNROM\nUNROM", "About cnes", MB_ICONINFORMATION);
-				break;
+				case COMMAND_ABOUT:
+					MessageBox(hwnd, "WinNES 0.1 by r1sc 2023\n\nSupported mappers:\nNROM\nUNROM", "About WinNES", MB_ICONINFORMATION);
+					break;
+				case COMMAND_SAVE_STATE:
+					//save_state();
+					break;
+				case COMMAND_RESTORE_STATE:
+					//restore_state();
+					break;
 			}
 		}
 		break;
@@ -86,18 +103,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 		break;
 		case WM_KEYDOWN:
 		{
-			for (size_t i = 0; i < 8; i++) {
+			for (size_t i = 0; i < 16; i++) {
 				if (keymap[i] == wParam) {
-					keysdown |= (1 << i);
+					uint8_t controller_id = (i & 8) == 8;
+					buttons_down[controller_id] |= (1 << (i & 7));
 				}
 			}
 		}
 		break;
 		case WM_KEYUP:
 		{
-			for (size_t i = 0; i < 8; i++) {
+			for (size_t i = 0; i < 16; i++) {
 				if (keymap[i] == wParam) {
-					keysdown &= ~(1 << i);
+					uint8_t controller_id = (i & 8) == 8;
+					buttons_down[controller_id] &= ~(1 << (i & 7));
 				}
 			}
 		}
@@ -114,7 +133,7 @@ void create_window() {
 	wc.lpfnWndProc = WndProc;
 	wc.hInstance = hInstance;
 	wc.hbrBackground = (HBRUSH)(COLOR_BACKGROUND);
-	wc.lpszClassName = "cnes";
+	wc.lpszClassName = "WinNES";
 	wc.style = CS_OWNDC;
 	if (!RegisterClass(&wc)) {
 		exit(1);
@@ -128,11 +147,11 @@ void create_window() {
 
 	hwnd = CreateWindow(
 		wc.lpszClassName,
-		"cnes",
+		"WinNES",
 		WS_OVERLAPPEDWINDOW | WS_VISIBLE,
 		GetSystemMetrics(SM_CXSCREEN) / 2 - width / 2,
 		GetSystemMetrics(SM_CYSCREEN) / 2 - height / 2,
 		width, height, 0, 0, hInstance, 0);
 
-	
+
 }

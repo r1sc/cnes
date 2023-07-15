@@ -1,7 +1,8 @@
 #include <stdbool.h>
-#include "ppu.h"
-#include "cartridge.h"
+#include "nes001.h"
+#include "apu.h"
 #include "fake6502.h"
+#include "include/cnes.h"
 
 static struct OAMEntry_t {
 	uint8_t y;
@@ -257,6 +258,8 @@ void load_shifters() {
 }
 
 size_t cpu_timer = 0;
+size_t apu_timer = 0;
+
 void tick_frame() {
 	for (scanline = -1; scanline <= 260; scanline++) {
 		for (dot = 0; dot <= 340; dot++) {
@@ -266,6 +269,13 @@ void tick_frame() {
 			} else {
 				cpu_timer--;
 			}
+
+			//if (apu_timer == 6) {
+			//	tick_apu();
+			//	apu_timer = 0;
+			//} else {
+			//	apu_timer++;
+			//}
 
 			if (scanline <= 239) {
 				if (scanline == -1 && dot == 1) {

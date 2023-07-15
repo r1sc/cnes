@@ -20,7 +20,4 @@ extern unsigned int new_height;
 #define NES_VK_B 2
 #define NES_VK_A 1
 
-extern unsigned int keymap[8];
-extern uint8_t keysdown;
-
 void create_window();
