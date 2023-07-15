@@ -4,7 +4,7 @@
 
 HWND hwnd;
 
-unsigned int keymap[16] = { 'K', 'L', 'I', 'O', VK_UP, VK_DOWN, VK_LEFT,  VK_RIGHT, 'A', 'S', 'Q', 'W', 'T', 'G', 'F', 'H'};
+unsigned int keymap[16] = { 'L', 'K', 'I', 'O', VK_UP, VK_DOWN, VK_LEFT,  VK_RIGHT, 'S', 'A', 'Q', 'W', 'T', 'G', 'F', 'H'};
 uint8_t buttons_down[2];
 
 HMENU menu;
@@ -152,6 +152,4 @@ void create_window() {
 		GetSystemMetrics(SM_CXSCREEN) / 2 - width / 2,
 		GetSystemMetrics(SM_CYSCREEN) / 2 - height / 2,
 		width, height, 0, 0, hInstance, 0);
-
-
 }

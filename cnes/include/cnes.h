@@ -7,6 +7,7 @@ typedef struct {
 } pixformat_t;
 
 extern pixformat_t framebuffer[256 * 240];
+extern uint8_t buttons_down[2];
 
 void load_ines(char* path);
 void reset_machine();

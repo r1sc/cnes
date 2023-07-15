@@ -8,7 +8,7 @@ add_executable (winnes WIN32
 	"main.c"
 	"window.c"
 	"glstuff/glad.c"
-)
+ "joystick.c")
 
 if(MSVC)
   target_compile_options(winnes PUBLIC "/ZI")

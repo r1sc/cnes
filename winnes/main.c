@@ -12,6 +12,7 @@
 
 bool running = true;
 static HGLRC ourOpenGLRenderingContext;
+extern void poll_joystick(uint8_t joystick_id);
 
 GLuint load_shader(const char* shader_src, GLenum kind) {
 
@@ -208,6 +209,7 @@ DWORD WINAPI render_thread(void* param) {
 
 		bool needs_rerender = false;
 		if (accum >= dt) {
+			poll_joystick(0);
 			needs_rerender = true;
 
 			while (accum >= dt) {
@@ -236,7 +238,7 @@ DWORD WINAPI render_thread(void* param) {
 
 				needs_resize = false;
 			}
-		}		
+		}
 	}
 
 	wglDeleteContext(ourOpenGLRenderingContext);
@@ -252,7 +254,7 @@ int APIENTRY WinMain(
 ) {
 	char cwd[256];
 	GetCurrentDirectoryA(256, cwd);
-	load_ines("roms/balloon fight.nes");
+	load_ines("roms/smb.nes");
 
 	create_window();
 
