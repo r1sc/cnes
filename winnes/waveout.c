@@ -3,7 +3,7 @@
 
 #include "waveout.h"
 
-#define NUM_BUFFERS 4
+#define NUM_BUFFERS 30
 
 HWAVEOUT waveout;
 WAVEHDR audio_headers[NUM_BUFFERS];

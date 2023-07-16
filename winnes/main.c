@@ -215,17 +215,17 @@ DWORD WINAPI render_thread(void* param) {
 			//poll_joystick(0);
 			needs_rerender = true;
 
+
 			while (accum >= dt) {
+				tick_frame();
+				num_frames++;
+				accum -= dt;
+
 				int16_t* buffer = waveout_get_current_buffer();
 				if (buffer != NULL) {
 					memcpy(buffer, frame_samples, 262 * 2);
 					waveout_queue_buffer();
 				}
-				tick_frame();
-
-
-				num_frames++;
-				accum -= dt;
 			}
 		} else {
 			Sleep(1);

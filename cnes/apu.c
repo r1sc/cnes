@@ -12,6 +12,7 @@ typedef struct {
 	uint8_t sequence;
 	uint8_t sequencer_pos;
 	uint8_t current_output;
+	uint16_t length_counter;
 	bool length_counter_halt;
 	bool constant_volume;
 	uint8_t volume;
@@ -77,17 +78,15 @@ void apu_write(uint16_t address, uint8_t value) {
 		pulse2_enabled = value & 2;
 		triangle_enabled = value & 4;
 		dmc_enabled = value & 8;
+
+		if (!pulse1_enabled) pulse1.length_counter = 0;
+		if (!pulse2_enabled) pulse2.length_counter = 0;
 	}
 }
 
 int16_t frame_samples[262];
-int16_t acc = 0;
-
-#define WINDOW_LEN 8
-static int16_t window[WINDOW_LEN];
-static int window_pos = 0;
-static int oout = 0;
-static int16_t prev_sample = 0;
+static int16_t y = 0;
+static unsigned int apu_cycles = 0;
 
 void apu_tick(uint16_t scanline) {
 
@@ -102,35 +101,20 @@ void apu_tick(uint16_t scanline) {
 	int16_t frame_sample = 0;
 
 	if (pulse1_enabled) {
-		frame_sample += pulse1.current_output ? 15000 : -15000;
+		frame_sample += pulse1.current_output ? 5000 : -5000;
 		num_enabled++;
 	}
 	if (pulse2_enabled) {
-		frame_sample += pulse2.current_output ? 15000 : -15000;
+		frame_sample += pulse2.current_output ? 5000 : -5000;
 		num_enabled++;
 	}
 
 	if (num_enabled > 0) {
-		frame_sample /= num_enabled;
+		frame_sample /= (float)num_enabled;
 	}
 
-	window[window_pos] = frame_sample;
-	
-	int current = 0;
-	for (size_t i = 0; i < WINDOW_LEN; i++) {
-		current += window[i];
-	}
+	y += ((frame_sample - y) >> 6);
+	frame_samples[scanline] = y;
 
-	window[window_pos] = (int16_t)(current / WINDOW_LEN);
-	/*frame_samples[scanline] = window[window_pos++];*/
-
-	if (window_pos >= WINDOW_LEN) {
-		window_pos = 0;
-	}
-
-	oout += (frame_sample - prev_sample);
-	oout -= (oout / 512);
-	prev_sample = oout;
-
-	frame_samples[scanline] = oout;
+	apu_cycles++;
 }
