@@ -261,6 +261,7 @@ size_t cpu_timer = 0;
 size_t apu_timer = 0;
 
 void tick_frame() {
+	if (!rom_loaded) return;
 	for (scanline = -1; scanline <= 260; scanline++) {
 		for (dot = 0; dot <= 340; dot++) {
 			if (cpu_timer == 0) {
@@ -270,12 +271,12 @@ void tick_frame() {
 				cpu_timer--;
 			}
 
-			//if (apu_timer == 6) {
-			//	tick_apu();
-			//	apu_timer = 0;
-			//} else {
-			//	apu_timer++;
-			//}
+			if (apu_timer == 6) {
+				apu_tick(scanline + 1);
+				apu_timer = 0;
+			} else {
+				apu_timer++;
+			}
 
 			if (scanline <= 239) {
 				if (scanline == -1 && dot == 1) {

@@ -3,18 +3,18 @@
 
 #include "waveout.h"
 
-#define NUM_BUFFERS 12
+#define NUM_BUFFERS 4
 
 HWAVEOUT waveout;
 WAVEHDR audio_headers[NUM_BUFFERS];
-int8_t* buffers[NUM_BUFFERS];
+int16_t* buffers[NUM_BUFFERS];
 
-int8_t* queue[NUM_BUFFERS];
+int16_t* queue[NUM_BUFFERS];
 size_t queue_read = 0;
 size_t queue_write = 0;
 int rw = 0;
 
-void push_free_buffer(int8_t* buffer_ptr) {
+void push_free_buffer(int16_t* buffer_ptr) {
 	rw++;
 	queue[queue_write++] = buffer_ptr;
 	if (queue_write == NUM_BUFFERS) {
@@ -23,7 +23,7 @@ void push_free_buffer(int8_t* buffer_ptr) {
 }
 
 // Returns NULL if all buffers are full
-int8_t* waveout_get_current_buffer() {
+int16_t* waveout_get_current_buffer() {
 	if (rw == 0) return NULL;
 	return queue[queue_read];
 }
@@ -36,7 +36,13 @@ void waveout_queue_buffer() {
 		queue_read = 0;
 	}
 
-	MMRESULT result = waveOutPrepareHeader(waveout, audio_header, sizeof(WAVEHDR));
+	MMRESULT result = waveOutUnprepareHeader(waveout, audio_header, sizeof(WAVEHDR));
+	if (result != MMSYSERR_NOERROR) {
+		printf("Error unpreparing header: %d\n", result);
+		return;
+	}
+
+	result = waveOutPrepareHeader(waveout, audio_header, sizeof(WAVEHDR));
 	if (result != MMSYSERR_NOERROR) {
 		printf("Error preparing header: %d\n", result);
 		return;
@@ -74,20 +80,15 @@ void CALLBACK waveOutProc(
 ) {
 	if (uMsg == WOM_DONE && !shutting_down) {
 		LPWAVEHDR audio_header = (LPWAVEHDR)dwParam1;
-		MMRESULT result = waveOutUnprepareHeader(waveout, audio_header, sizeof(WAVEHDR));
-		if (result != MMSYSERR_NOERROR) {
-			printf("Error unpreparing header: %d\n", result);
-			return;
-		}
-
-		int8_t* buffer = (int8_t*)audio_header->lpData;
+		
+		int16_t* buffer = (int16_t*)audio_header->lpData;
 		push_free_buffer(buffer);
 	}
 }
 
 void waveout_initialize(unsigned int sample_rate, unsigned buffer_size) {
 	WORD nChannels = 1;
-	WORD wBitsPerSample = 8;
+	WORD wBitsPerSample = 16;
 	WORD nBlockAlign = (nChannels * wBitsPerSample) / 8;
 	DWORD nAvgBytesPerSec = sample_rate * nBlockAlign;
 
@@ -109,11 +110,11 @@ void waveout_initialize(unsigned int sample_rate, unsigned buffer_size) {
 
 	// Prepare buffers
 	for (size_t i = 0; i < NUM_BUFFERS; i++) {
-		buffers[i] = (int8_t*)calloc(buffer_size, sizeof(int8_t));
+		buffers[i] = (int16_t*)calloc(buffer_size, sizeof(int16_t));
 
 		ZeroMemory(&audio_headers[i], sizeof(WAVEHDR));
 		audio_headers[i].lpData = (LPSTR)buffers[i];
-		audio_headers[i].dwBufferLength = buffer_size * sizeof(int8_t);
+		audio_headers[i].dwBufferLength = buffer_size * sizeof(int16_t);
 
 		push_free_buffer(buffers[i]);
 	}

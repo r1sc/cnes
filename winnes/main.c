@@ -7,6 +7,7 @@
 #include <cnes.h>
 
 #include "window.h"
+#include "waveout.h"
 #include "glstuff/glad.h"
 #include "glstuff/wglext.h"
 
@@ -190,6 +191,8 @@ DWORD WINAPI render_thread(void* param) {
 	double secondacc = 0;
 	int num_frames = 0;
 
+	waveout_initialize(262*60, 262);
+
 	while (running) {
 		now = (double)GetTickCount64();
 		double delta = now - last;
@@ -209,11 +212,18 @@ DWORD WINAPI render_thread(void* param) {
 
 		bool needs_rerender = false;
 		if (accum >= dt) {
-			poll_joystick(0);
+			//poll_joystick(0);
 			needs_rerender = true;
 
 			while (accum >= dt) {
+				int16_t* buffer = waveout_get_current_buffer();
+				if (buffer != NULL) {
+					memcpy(buffer, frame_samples, 262 * 2);
+					waveout_queue_buffer();
+				}
 				tick_frame();
+
+
 				num_frames++;
 				accum -= dt;
 			}
@@ -252,9 +262,7 @@ int APIENTRY WinMain(
 	LPSTR     lpCmdLine,
 	int       nShowCmd
 ) {
-	char cwd[256];
-	GetCurrentDirectoryA(256, cwd);
-	load_ines("roms/smb.nes");
+	load_ines("roms/ducktales.nes");
 
 	create_window();
 

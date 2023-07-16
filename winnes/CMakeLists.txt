@@ -8,7 +8,12 @@ add_executable (winnes WIN32
 	"main.c"
 	"window.c"
 	"glstuff/glad.c"
- "joystick.c")
+ "joystick.c"
+ "waveout.c"
+"winnes.rc"
+)
+
+ set_source_files_properties(winres.rc PROPERTIES LANGUAGE RC)
 
 if(MSVC)
   target_compile_options(winnes PUBLIC "/ZI")

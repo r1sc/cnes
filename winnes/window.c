@@ -2,6 +2,8 @@
 #include "window.h"
 #include <cnes.h>
 
+#include "resource.h"
+
 HWND hwnd;
 
 unsigned int keymap[16] = { 'L', 'K', 'I', 'O', VK_UP, VK_DOWN, VK_LEFT,  VK_RIGHT, 'S', 'A', 'Q', 'W', 'T', 'G', 'F', 'H'};
@@ -135,6 +137,7 @@ void create_window() {
 	wc.hbrBackground = (HBRUSH)(COLOR_BACKGROUND);
 	wc.lpszClassName = "WinNES";
 	wc.style = CS_OWNDC;
+	wc.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_ICON1));
 	if (!RegisterClass(&wc)) {
 		exit(1);
 		return;

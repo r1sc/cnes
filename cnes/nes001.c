@@ -5,11 +5,12 @@
 #include <stdlib.h>
 
 #include "include/cnes.h"
+#include "apu.h"
 #include "bit.h"
 #include "fake6502.h"
-#include "NROM.h"
-#include "UNROM.h"
-#include "MMC1.h"
+#include "mappers/NROM.h"
+#include "mappers/UNROM.h"
+#include "mappers/MMC1.h"
 
 ines_t ines = { 0 };
 bool rom_loaded = false;
@@ -69,7 +70,7 @@ void write6502(uint16_t address, uint8_t value) {
 		controller_status[0] = buttons_down[0];
 		controller_status[1] = buttons_down[1];
 	} else if ((address >= 0x4000 && address <= 0x4013) || address == 0x4015 || address == 0x4017) {
-		;
+		apu_write(address, value);
 	} else {
 		bool cpu_a15 = (address & BIT_15) != 0;
 		bool cpu_a14 = (address & BIT_14) != 0;
