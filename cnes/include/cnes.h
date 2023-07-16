@@ -7,8 +7,8 @@ typedef struct {
 } pixformat_t;
 
 extern pixformat_t framebuffer[256 * 240];
-extern int16_t frame_samples[262];
 extern uint8_t buttons_down[2];
+extern void write_audio_sample(int scanline, int16_t sample);
 
 void load_ines(char* path);
 void reset_machine();

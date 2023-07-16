@@ -80,6 +80,37 @@ GLuint load_shader_program_from_disk(const char* path) {
 	return link_program(src);
 }
 
+// AUDIO STUFF
+//
+#define SAMPLE_RATE 15720
+#define BUFFER_LEN 262
+static int16_t* buffer = NULL;
+static size_t buffer_pos = 0;
+static int16_t sample_out = 0;
+static int last_scanline = -2; // Start out of range
+
+void write_audio_sample(int scanline, int16_t sample) {
+	// Super crude 1 pole IIR filter
+	sample_out += ((sample - sample_out) >> 7);
+
+	if (scanline == last_scanline) return;
+	last_scanline = scanline;
+
+	if (buffer == NULL) {
+		buffer = waveout_get_current_buffer();
+		buffer_pos = 0;
+	}
+	if (buffer != NULL) {
+		buffer[buffer_pos++] = sample_out;
+
+		if (buffer_pos == BUFFER_LEN) {
+			waveout_queue_buffer();
+			buffer = NULL;
+		}
+	}
+}
+
+
 static HDC window_dc;
 
 DWORD WINAPI render_thread(void* param) {
@@ -191,7 +222,7 @@ DWORD WINAPI render_thread(void* param) {
 	double secondacc = 0;
 	int num_frames = 0;
 
-	waveout_initialize(262*60, 262);
+	waveout_initialize(SAMPLE_RATE, BUFFER_LEN);
 
 	while (running) {
 		now = (double)GetTickCount64();
@@ -220,12 +251,6 @@ DWORD WINAPI render_thread(void* param) {
 				tick_frame();
 				num_frames++;
 				accum -= dt;
-
-				int16_t* buffer = waveout_get_current_buffer();
-				if (buffer != NULL) {
-					memcpy(buffer, frame_samples, 262 * 2);
-					waveout_queue_buffer();
-				}
 			}
 		} else {
 			Sleep(1);

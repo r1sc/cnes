@@ -10,4 +10,10 @@ add_library (cnes STATIC
 	"apu.c" 
 )
 
+if(MSVC)
+  target_compile_options(cnes PUBLIC "/ZI")
+  target_link_options(cnes PUBLIC "/INCREMENTAL")
+endif()
+
+
 target_include_directories(cnes PUBLIC include)

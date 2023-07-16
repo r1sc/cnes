@@ -2,11 +2,12 @@
 #include <stdbool.h>
 #include <assert.h>
 #include "apu.h"
+#include "fake6502.h"
+#include "include/cnes.h"
 
 static uint8_t duty_cycles[4] = { 0b10000000, 0b11000000, 0b11110000, 0b00111111 };
 
 typedef struct {
-	uint16_t timer;
 	uint16_t timer_cur;
 	uint16_t reload;
 	uint8_t sequence;
@@ -17,6 +18,11 @@ typedef struct {
 	bool constant_volume;
 	uint8_t volume;
 } apu_pulse_t;
+
+uint8_t length_table[] = {	10, 254, 20,  2, 40,  4, 80,  6,
+							160,   8, 60, 10, 14, 12, 26, 14,
+							12,  16, 24, 18, 48, 20, 96, 22,
+							192,  24, 72, 26, 16, 28, 32, 30 };
 
 void pulse_write_reg(apu_pulse_t* pulse, uint8_t address, uint8_t value) {
 	switch (address) {
@@ -39,6 +45,8 @@ void pulse_write_reg(apu_pulse_t* pulse, uint8_t address, uint8_t value) {
 		case 3:
 			pulse->reload = (pulse->reload & 0xFF) | ((value & 0b111) << 8);
 			pulse->timer_cur = pulse->reload;
+			pulse->length_counter = length_table[(value & 0xF8) >> 3];
+			
 			break;
 	}
 }
@@ -61,6 +69,9 @@ void pulse_tick(apu_pulse_t* pulse) {
 
 static apu_pulse_t pulse1 = { 0 };
 static apu_pulse_t pulse2 = { 0 };
+static unsigned int apu_cycle_counter = 0;
+static bool five_step_mode = false;
+static bool interrupt_inhibit = true;
 
 bool pulse1_enabled = false;
 bool pulse2_enabled = false;
@@ -84,11 +95,58 @@ void apu_write(uint16_t address, uint8_t value) {
 	}
 }
 
-int16_t frame_samples[262];
-static int16_t y = 0;
-static unsigned int apu_cycles = 0;
+void clock_linear_counters() {
+
+}
+
+void clock_length_counters() {
+	if (!pulse1.length_counter_halt && pulse1.length_counter > 0) {
+		pulse1.length_counter--;
+	}
+
+	if (!pulse2.length_counter_halt && pulse2.length_counter > 0) {
+		pulse2.length_counter--;
+	}
+}
 
 void apu_tick(uint16_t scanline) {
+	switch (apu_cycle_counter) {
+		case 3728:
+			clock_linear_counters();
+			break;
+		case 7456:
+			clock_linear_counters();
+			clock_length_counters();
+			break;
+		case 11185:
+			clock_linear_counters();
+			break;
+		case 14914:
+			if (!five_step_mode) {
+				if (!interrupt_inhibit) {
+					irq6502();
+				}
+				clock_linear_counters();
+				clock_length_counters();
+			}
+			break;
+		case 14915:
+			if (!five_step_mode) {
+				apu_cycle_counter = 0;
+			}
+			break;
+		case 18640:
+			if (five_step_mode) {
+				clock_linear_counters();
+				clock_length_counters();
+			}
+			break;
+		case 18641:
+			if (five_step_mode) {
+				apu_cycle_counter = 0;
+			}
+			break;
+	}
 
 	if (pulse1_enabled) {
 		pulse_tick(&pulse1);
@@ -100,21 +158,19 @@ void apu_tick(uint16_t scanline) {
 	int num_enabled = 0;
 	int16_t frame_sample = 0;
 
-	if (pulse1_enabled) {
+	if (pulse1_enabled && pulse1.length_counter > 0 && pulse1.timer_cur >= 8) {
 		frame_sample += pulse1.current_output ? 5000 : -5000;
 		num_enabled++;
 	}
-	if (pulse2_enabled) {
+	if (pulse2_enabled && pulse2.length_counter > 0 && pulse2.timer_cur >= 8) {
 		frame_sample += pulse2.current_output ? 5000 : -5000;
 		num_enabled++;
 	}
 
 	if (num_enabled > 0) {
-		frame_sample /= (float)num_enabled;
+		frame_sample /=  num_enabled;
 	}
 
-	y += ((frame_sample - y) >> 6);
-	frame_samples[scanline] = y;
-
-	apu_cycles++;
+	write_audio_sample(scanline, frame_sample);
+	apu_cycle_counter++;
 }
