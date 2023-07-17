@@ -271,7 +271,12 @@ void tick_frame() {
 				cpu_timer--;
 			}
 
+			if (apu_timer == 3) {
+				apu_tick_triangle();
+			}
+			
 			if (apu_timer == 6) {
+				apu_tick_triangle();
 				apu_tick(scanline + 1);
 				apu_timer = 0;
 			} else {

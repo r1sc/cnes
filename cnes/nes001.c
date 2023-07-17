@@ -146,10 +146,12 @@ void read_ines(const char* path) {
 	fread(ines.prg_rom_banks, 16384, header.prg_rom_16k_chunks, f);
 
 	ines.chr_rom_size_8k_chunks = header.chr_rom_8k_chunks;
-	size_t chr_rom_size = header.chr_rom_8k_chunks == 0 ? 0x4000 : 8192 * (size_t)header.chr_rom_8k_chunks;
+	size_t chr_rom_size = header.chr_rom_8k_chunks == 0 ? 8192 : 8192 * (size_t)header.chr_rom_8k_chunks;
 	ines.chr_rom = (uint8_t*)malloc(chr_rom_size);
 	if (!ines.chr_rom) exit(1);
-	fread(ines.chr_rom, 1, chr_rom_size, f);
+	if (header.chr_rom_8k_chunks > 0) {
+		fread(ines.chr_rom, 1, chr_rom_size, f);
+	}
 
 	fclose(f);
 
