@@ -35,7 +35,7 @@ uint8_t read6502(uint16_t address) {
 		return value;
 	} else if ((address >= 0x4000 && address <= 0x4013) || address == 0x4015 || address == 0x4017) {
 		// APU
-		return 0;
+		return apu_read(address);
 	}
 
 	bool cpu_a15 = (address & BIT_15) != 0;
@@ -149,6 +149,7 @@ void read_ines(const char* path) {
 	size_t chr_rom_size = header.chr_rom_8k_chunks == 0 ? 8192 : 8192 * (size_t)header.chr_rom_8k_chunks;
 	ines.chr_rom = (uint8_t*)malloc(chr_rom_size);
 	if (!ines.chr_rom) exit(1);
+
 	if (header.chr_rom_8k_chunks > 0) {
 		fread(ines.chr_rom, 1, chr_rom_size, f);
 	}
@@ -159,13 +160,15 @@ void read_ines(const char* path) {
 }
 
 void free_ines() {
-	rom_loaded = false;
-	free(ines.prg_rom_banks);
-	free(ines.chr_rom);
+	if (rom_loaded) {
+		rom_loaded = false;
+		free(ines.prg_rom_banks);
+		free(ines.chr_rom);
+	}
 }
 
 void load_ines(char* path) {
-	if (ines.prg_rom_banks != NULL) {
+	if (rom_loaded) {
 		free_ines();
 	}
 

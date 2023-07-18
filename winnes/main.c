@@ -91,7 +91,7 @@ static int last_scanline = -2; // Start out of range
 
 void write_audio_sample(int scanline, int16_t sample) {
 	// Super crude 1 pole IIR filter
-	sample_out += ((sample - sample_out) >> 7);
+	sample_out += ((sample - sample_out) >> 6);
 
 	if (scanline == last_scanline) return;
 	last_scanline = scanline;
@@ -287,7 +287,7 @@ int APIENTRY WinMain(
 	LPSTR     lpCmdLine,
 	int       nShowCmd
 ) {
-	load_ines("roms/ducktales.nes");
+	load_ines("roms/megaman2.nes");
 
 	create_window();
 

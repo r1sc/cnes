@@ -13,13 +13,13 @@ typedef struct {
 	uint8_t sequence;
 	uint8_t sequencer_pos;
 	uint8_t current_output;
-	uint16_t length_counter;
+	uint8_t length_counter;
 	bool length_counter_halt;
 	bool constant_volume;
 	uint8_t volume;
 } apu_pulse_t;
 
-uint8_t length_table[] = {	10, 254, 20,  2, 40,  4, 80,  6,
+uint8_t length_table[] = { 10, 254, 20,  2, 40,  4, 80,  6,
 							160,   8, 60, 10, 14, 12, 26, 14,
 							12,  16, 24, 18, 48, 20, 96, 22,
 							192,  24, 72, 26, 16, 28, 32, 30 };
@@ -46,7 +46,6 @@ void pulse_write_reg(apu_pulse_t* pulse, uint8_t address, uint8_t value) {
 			pulse->reload = (pulse->reload & 0xFF) | ((value & 0b111) << 8);
 			pulse->timer = pulse->reload;
 			pulse->length_counter = length_table[(value & 0xF8) >> 3];
-			
 			break;
 	}
 }
@@ -54,12 +53,16 @@ void pulse_write_reg(apu_pulse_t* pulse, uint8_t address, uint8_t value) {
 void pulse_tick(apu_pulse_t* pulse) {
 	if (pulse->timer == 0) {
 		pulse->timer = pulse->reload;
-		pulse->current_output = (pulse->sequence >> pulse->sequencer_pos) & 1;
+		if (pulse->length_counter > 0) {
+			pulse->current_output = (pulse->sequence >> pulse->sequencer_pos) & 1;
 
-		if (pulse->sequencer_pos == 0) {
-			pulse->sequencer_pos = 7;
+			if (pulse->sequencer_pos == 0) {
+				pulse->sequencer_pos = 7;
+			} else {
+				pulse->sequencer_pos--;
+			}
 		} else {
-			pulse->sequencer_pos--;
+			pulse->current_output = 0;
 		}
 
 	} else {
@@ -70,7 +73,7 @@ void pulse_tick(apu_pulse_t* pulse) {
 struct {
 	uint16_t timer;
 	uint16_t reload;
-	uint16_t length_counter;
+	uint8_t length_counter;
 	uint16_t linear_counter;
 	uint16_t linear_counter_reload;
 	bool linear_counter_reload_flag;
@@ -83,15 +86,15 @@ void triangle_write_reg(uint8_t address, uint8_t value) {
 	switch (address) {
 		case 0:
 			triangle.linear_counter_reload = value & 0b01111111;
-			triangle.control_flag = value & 0x80;
+			triangle.control_flag = (value & 0x80) == 0x80;
 			break;
 		case 2:
 			triangle.reload = (triangle.reload & 0x700) | value;
 			break;
 		case 3:
+			triangle.length_counter = length_table[(value & 0xF8) >> 3];
 			triangle.reload = (triangle.reload & 0xFF) | ((value & 0b111) << 8);
 			triangle.timer = triangle.reload;
-			triangle.length_counter = length_table[(value & 0xF8) >> 3];
 			triangle.linear_counter_reload_flag = true;
 			break;
 	}
@@ -99,20 +102,22 @@ void triangle_write_reg(uint8_t address, uint8_t value) {
 
 static uint8_t triangle_sequence[] = {
 	15, 14, 13, 12, 11, 10,  9,  8,  7,  6,  5,  4,  3,  2,  1,  0,
-	0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15 
+	0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15
 };
 
 void triangle_tick() {
 	if (triangle.timer == 0) {
 		triangle.timer = triangle.reload;
-		triangle.current_output = triangle_sequence[triangle.sequencer_pos];
+		if (triangle.linear_counter > 0 && triangle.length_counter > 0) {
+			if (triangle.sequencer_pos == 31) {
+				triangle.sequencer_pos = 0;
+			} else {
+				triangle.sequencer_pos++;
+			}
 
-		if (triangle.sequencer_pos == 31) {
-			triangle.sequencer_pos = 0;
-		} else {
-			triangle.sequencer_pos++;
+			triangle.current_output = triangle_sequence[triangle.sequencer_pos];
 		}
-	} else if(triangle.timer > 0) {
+	} else if (triangle.timer > 0) {
 		triangle.timer--;
 	}
 }
@@ -122,6 +127,7 @@ static apu_pulse_t pulse2 = { 0 };
 static unsigned int apu_cycle_counter = 0;
 static bool five_step_mode = false;
 static bool interrupt_inhibit = true;
+static bool frame_interrupt_flag = false;
 
 bool pulse1_enabled = false;
 bool pulse2_enabled = false;
@@ -133,7 +139,7 @@ void apu_write(uint16_t address, uint8_t value) {
 		pulse_write_reg(&pulse1, address & 0b11, value);
 	} else if (address >= 0x4004 && address <= 0x4007) {
 		pulse_write_reg(&pulse2, address & 0b11, value);
-	} else if(address >= 0x4008 && address <= 0x400B) {
+	} else if (address >= 0x4008 && address <= 0x400B) {
 		triangle_write_reg(address & 0b11, value);
 	} else if (address == 0x4015) {
 		// Status
@@ -144,18 +150,41 @@ void apu_write(uint16_t address, uint8_t value) {
 
 		if (!pulse1_enabled) pulse1.length_counter = 0;
 		if (!pulse2_enabled) pulse2.length_counter = 0;
+		if (!triangle_enabled) triangle.length_counter = 0;
+
+	} else if (address == 0x4017) {
+		five_step_mode = value & 0b10000000;
+		interrupt_inhibit = value = 0b01000000;
+		apu_cycle_counter = 0; // Reset frame counter
+
 	}
+}
+
+uint8_t apu_read(uint16_t address) {
+	if (address == 0x4015) {
+		uint8_t value =
+			(interrupt_inhibit ? 0x80 : 0)
+			| (frame_interrupt_flag ? 0x40 : 0)
+			| (triangle.length_counter > 0 ? 4 : 0)
+			| (pulse2.length_counter > 0 ? 2 : 0)
+			| (pulse1.length_counter > 0 ? 1 : 0);
+
+		frame_interrupt_flag = false;
+		return value;
+	}
+
+	return 0;
 }
 
 void clock_linear_counters() {
 	if (triangle.linear_counter_reload_flag) {
 		triangle.linear_counter = triangle.linear_counter_reload;
-	} else if(triangle.linear_counter > 0) {
+	} else if (triangle.linear_counter > 0) {
 		triangle.linear_counter--;
 	}
 
 	if (!triangle.control_flag) {
-		triangle.linear_counter_reload = false;
+		triangle.linear_counter_reload_flag = false;
 	}
 }
 
@@ -194,6 +223,7 @@ void apu_tick(uint16_t scanline) {
 		case 14914:
 			if (!five_step_mode) {
 				if (!interrupt_inhibit) {
+					frame_interrupt_flag = true;
 					irq6502();
 				}
 				clock_linear_counters();
@@ -225,24 +255,24 @@ void apu_tick(uint16_t scanline) {
 		pulse_tick(&pulse2);
 	}
 
-	int num_enabled = 0;
+	int num_enabled = 3;
 	int16_t frame_sample = 0;
 
-	if (pulse1_enabled && pulse1.length_counter > 0 && pulse1.timer >= 8) {
+	if (pulse1_enabled) {
 		frame_sample += pulse1.current_output ? 5000 : -5000;
-		num_enabled++;
+		//num_enabled++;
 	}
-	if (pulse2_enabled && pulse2.length_counter > 0 && pulse2.timer >= 8) {
+	if (pulse2_enabled) {
 		frame_sample += pulse2.current_output ? 5000 : -5000;
-		num_enabled++;
+		//num_enabled++;
 	}
-	if (triangle_enabled && triangle.length_counter > 0) {
+	if (triangle_enabled) {
 		frame_sample += (int16_t)(((int)triangle.current_output * 666) - 5000);
-		num_enabled++;
+		//num_enabled++;
 	}
 
 	if (num_enabled > 0) {
-		frame_sample /=  num_enabled;
+		frame_sample /= num_enabled;
 	}
 
 	write_audio_sample(scanline, frame_sample);

@@ -58,14 +58,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 				case COMMAND_OPEN:
 				{
 					char szFile[100] = { 0 };
-					OPENFILENAME o = { 0 };
-					o.lStructSize = sizeof(OPENFILENAME);
-					o.hwndOwner = hWnd;
-					o.lpstrFilter = "NES Roms (*.nes)\0*.nes\0";
-					o.lpstrFile = szFile;
-					o.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
-					o.nMaxFile = sizeof(szFile);
-					if (GetOpenFileName(&o)) {
+					OPENFILENAME openFile = { 0 };
+					openFile.lStructSize = sizeof(OPENFILENAME);
+					openFile.hwndOwner = hWnd;
+					openFile.lpstrFilter = "NES Roms (*.nes)\0*.nes\0";
+					openFile.lpstrFile = szFile;
+					openFile.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+					openFile.nMaxFile = sizeof(szFile);
+					if (GetOpenFileName(&openFile)) {
 						load_ines(szFile);
 						//EnableMenuItem(emuMenu, COMMAND_RESTORE_STATE, has_save_state ? MF_ENABLED : MF_GRAYED);
 					}
