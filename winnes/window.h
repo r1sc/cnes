@@ -4,7 +4,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-uint8_t buttons_down[2];
 extern HWND hwnd;
 
 extern bool needs_resize;

@@ -162,8 +162,8 @@ void read_ines(const char* path) {
 void free_ines() {
 	if (rom_loaded) {
 		rom_loaded = false;
-		free(ines.prg_rom_banks);
 		free(ines.chr_rom);
+		free(ines.prg_rom_banks);
 	}
 }
 

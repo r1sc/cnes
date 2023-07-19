@@ -10,6 +10,7 @@
 #include "waveout.h"
 #include "glstuff/glad.h"
 #include "glstuff/wglext.h"
+#include <crtdbg.h>
 
 bool running = true;
 static HGLRC ourOpenGLRenderingContext;
@@ -77,7 +78,10 @@ GLuint load_shader_program_from_disk(const char* path) {
 	fread(src, size, 1, f);
 	fclose(f);
 
-	return link_program(src);
+	GLuint program = link_program(src);
+	free(src);
+
+	return program;
 }
 
 // AUDIO STUFF
@@ -233,9 +237,9 @@ DWORD WINAPI render_thread(void* param) {
 
 		if (secondacc >= 1000) {
 			fps = frame_counter;
-			char title[128];
+			/*char title[128];
 			sprintf(title, "WinNES - (%d fps = %d frames / sec)\0", fps, num_frames);
-			SetWindowText(hwnd, title);
+			SetWindowText(hwnd, title);*/
 			frame_counter = 0;
 			num_frames = 0;
 			secondacc -= 1000;
@@ -276,7 +280,10 @@ DWORD WINAPI render_thread(void* param) {
 		}
 	}
 
+	wglMakeCurrent(NULL, NULL);
 	wglDeleteContext(ourOpenGLRenderingContext);
+
+	waveout_free();
 
 	return 0;
 }
@@ -288,10 +295,13 @@ int APIENTRY WinMain(
 	int       nShowCmd
 ) {
 	load_ines("roms/megaman2.nes");
-
 	create_window();
 
 	HANDLE threadId = CreateThread(NULL, 0, render_thread, NULL, 0, NULL);
+	if (!threadId) {
+		MessageBox(NULL, "Failed to create render thread", "Error", 0);
+		return 1;
+	}
 
 	MSG msg;
 	while (running) {
@@ -306,5 +316,9 @@ int APIENTRY WinMain(
 
 	}
 
-	WaitForSingleObject(threadId, 0);
+	WaitForSingleObject(threadId, INFINITE);
+
+	free_ines();
+
+	return 0;
 }
