@@ -145,13 +145,18 @@ void read_ines(const char* path) {
 
 	fread(ines.prg_rom_banks, 16384, header.prg_rom_16k_chunks, f);
 
-	ines.chr_rom_size_8k_chunks = header.chr_rom_8k_chunks;
-	size_t chr_rom_size = header.chr_rom_8k_chunks == 0 ? 8192 : 8192 * (size_t)header.chr_rom_8k_chunks;
-	ines.chr_rom = (uint8_t*)malloc(chr_rom_size);
-	if (!ines.chr_rom) exit(1);
+	ines.chr_rom_size_4k_chunks = header.chr_rom_8k_chunks * 2;
+	/*size_t chr_rom_size = header.chr_rom_8k_chunks == 0 ? 8192 : 8192 * (size_t)header.chr_rom_8k_chunks;*/
+	ines.is_8k_chr_ram = header.chr_rom_8k_chunks == 0;
+	if (ines.is_8k_chr_ram) {
+		ines.chr_rom_size_4k_chunks = 2; // CHR RAM
+	}
+
+	ines.chr_rom_banks = (CHR_ROM_BANK*)calloc(ines.chr_rom_size_4k_chunks, 4096);
+	if (!ines.chr_rom_banks) exit(1);
 
 	if (header.chr_rom_8k_chunks > 0) {
-		fread(ines.chr_rom, 1, chr_rom_size, f);
+		fread(ines.chr_rom_banks, 4096, ines.chr_rom_size_4k_chunks, f);
 	}
 
 	fclose(f);
@@ -162,7 +167,7 @@ void read_ines(const char* path) {
 void free_ines() {
 	if (rom_loaded) {
 		rom_loaded = false;
-		free(ines.chr_rom);
+		free(ines.chr_rom_banks);
 		free(ines.prg_rom_banks);
 	}
 }

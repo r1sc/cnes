@@ -65,14 +65,14 @@ uint8_t mmc1_ppuRead(uint16_t address) {
 	switch (chr_rom_mode) {
 		case false:
 			// switch 8 KB at a time
-			return ines.chr_rom[address & 0x1FFF];
+			return ines.chr_rom_banks[0][address & 0x1FFF]; // TODO
 			break;
 		case true:
 			// switch two separate 4 KB banks
 			if (address >= 0x1000) {
-				return ines.chr_rom[(chr_bank_1 << 12) | (address & 0x0FFF)];
+				return ines.chr_rom_banks[0][(chr_bank_1 << 12) | (address & 0x0FFF)]; // TODO
 			} else {
-				return ines.chr_rom[(chr_bank_0 << 12) | (address & 0x0FFF)];
+				return ines.chr_rom_banks[0][(chr_bank_0 << 12) | (address & 0x0FFF)]; // TODO
 			}
 			break;
 	}
@@ -92,7 +92,7 @@ void mmc1_ppuWrite(uint16_t address, uint8_t value) {
 		switch (chr_rom_mode) {
 			case false:
 				// switch 8 KB at a time
-				ines.chr_rom[address & 0x1FFF] = value;
+				ines.chr_rom_banks[0][address & 0x1FFF] = value; // TODO
 				break;
 			case true:
 			{

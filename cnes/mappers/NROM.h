@@ -17,7 +17,7 @@ uint8_t nrom_ppuRead(uint16_t address) {
 		// CIRAM Enabled
 		return ciram[nrom_ppu_addr_to_ciram_addr(address)];
 	}
-	return ines.chr_rom[address & 0x1FFF];
+	return ines.chr_rom_banks[address & 1][address & 0xFFF];
 }
 
 void nrom_ppuWrite(uint16_t address, uint8_t value) {

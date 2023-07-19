@@ -20,16 +20,20 @@ uint8_t unrom_ppuRead(uint16_t address) {
 		// CIRAM Enabled
 		return ciram[unrom_ppu_addr_to_ciram_addr(address)];
 	}
-	return ines.chr_rom[address & 0x1FFF];
+	uint16_t bank = address & 1;
+	uint16_t addr = (address >> 1) & 0xFFF;
+	return ines.chr_rom_banks[bank][addr];
 }
 
 void unrom_ppuWrite(uint16_t address, uint8_t value) {
 	if (address & BIT_13) {
 		// CIRAM Enabled
 		ciram[unrom_ppu_addr_to_ciram_addr(address)] = value;
-	} else if (ines.chr_rom_size_8k_chunks == 0) {
+	} else if (ines.is_8k_chr_ram) {
 		// CHR RAM
-		ines.chr_rom[address & 0x1FFF] = value;
+		uint16_t bank = address & 1;
+		uint16_t addr = (address >> 1) & 0xFFF;
+		ines.chr_rom_banks[bank][addr] = value;
 	}
 }
 
