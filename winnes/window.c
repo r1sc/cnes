@@ -6,7 +6,7 @@
 
 HWND hwnd;
 
-unsigned int keymap[16] = { 'L', 'K', 'I', 'O', VK_UP, VK_DOWN, VK_LEFT,  VK_RIGHT, 'S', 'A', 'Q', 'W', 'T', 'G', 'F', 'H'};
+unsigned int keymap[16] = { 'S', 'A', 'Q', 'W', VK_UP, VK_DOWN, VK_LEFT,  VK_RIGHT, 'L', 'K', 'I', 'O', 'T', 'G', 'F', 'H'};
 uint8_t buttons_down[2] = { 0, 0};
 
 HMENU menu;

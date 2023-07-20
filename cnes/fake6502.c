@@ -919,12 +919,17 @@ void irq6502() {
 	pc = (uint16_t)read6502(0xFFFE) | ((uint16_t)read6502(0xFFFF) << 8);
 }
 
+size_t total_steps_6502 = 0;
 void step6502() {
-	if (pc == 0x9f91) {
-		int hej = 23;
+	if (total_steps_6502 == 56648) {
+		int hej = 12;
+	}
+	if (pc == 0xC147) {
+		int hej = 2;
 	}
 	opcode = read6502(pc++);
 	status |= FLAG_CONSTANT;
+	total_steps_6502++;
 
 	penaltyop = 0;
 	penaltyaddr = 0;
@@ -933,20 +938,4 @@ void step6502() {
 	(*optable[opcode])();
 	clockticks6502 = ticktable[opcode];
 	if (penaltyop && penaltyaddr) clockticks6502++;
-}
-
-void run6502(size_t num_clocks) {
-	size_t total_clocks = 0;
-	while (total_clocks < num_clocks) {
-		opcode = read6502(pc++);
-		status |= FLAG_CONSTANT;
-
-		penaltyop = 0;
-		penaltyaddr = 0;
-
-		(*addrtable[opcode])();
-		(*optable[opcode])();
-		total_clocks += ticktable[opcode];
-		if (penaltyop && penaltyaddr) total_clocks++;
-	}
 }

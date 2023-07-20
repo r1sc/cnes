@@ -18,7 +18,7 @@ static uint8_t prg_bank_lo, prg_bank_hi, prg_bank_32;
 
 static uint8_t mirroring = 0;
 
-static uint8_t ram[8192];
+static uint8_t ram[1024*32]; // 32KB
 
 
 void mmc1_reset() {
@@ -97,15 +97,15 @@ void mmc1_ppuWrite(uint16_t address, uint8_t value) {
 
 uint8_t mmc1_cpuRead(uint16_t address) {
 	if (address >= 0x6000 && address <= 0x7FFF) {
-		return ram[address & 0x1FFF];
+		return ram[address];
 	}
 
 	if (address >= 0x8000) {
 		if (control_reg & 0b01000) {
 			if (address >= 0xC000) {
-				return ines.prg_rom[(prg_bank_hi % ines.prg_rom_size_16k_chunks) * 0x4000 + (address & 0x3fff)];
+				return ines.prg_rom[prg_bank_hi * 0x4000 + (address & 0x3fff)];
 			} else {
-				return ines.prg_rom[(prg_bank_lo % ines.prg_rom_size_16k_chunks) * 0x4000 + (address & 0x3fff)];
+				return ines.prg_rom[prg_bank_lo * 0x4000 + (address & 0x3fff)];
 			}
 		} else {
 			return ines.prg_rom[prg_bank_32 * 0x8000 + (address & 0x7FFF)];
@@ -116,7 +116,7 @@ uint8_t mmc1_cpuRead(uint16_t address) {
 
 void mmc1_cpuWrite(uint16_t address, uint8_t value) {
 	if (address >= 0x6000 && address <= 0x7FFF) {
-		ram[address & 0x1FFF] = value;
+		ram[address] = value;
 	} else if (address >= 0x8000) {
 		if (value & 0x80) {
 			sr = 0;

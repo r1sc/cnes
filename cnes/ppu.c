@@ -121,7 +121,9 @@ uint8_t cpu_ppu_bus_read(uint8_t address) {
 			value = ppudata_buffer;
 			ppudata_buffer = ppu_internal_bus_read(V.value);
 
-			if (V.value >= 0x3f00) value = ppudata_buffer; // Do not delay palette reads
+			if (V.value >= 0x3f00) {
+				value = ppudata_buffer; // Do not delay palette reads
+			}
 
 			V.value += (PPUCTRL.vram_address_increment ? 32 : 1);
 			break;

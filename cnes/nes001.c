@@ -51,6 +51,8 @@ uint8_t read6502(uint16_t address) {
 			return cpu_ppu_bus_read(address & 7);
 		} else if (cpu_ram_cs) {
 			return cpuram[address & 0x7FF];
+		} else {
+			return cartridge_cpuRead(address);
 		}
 	}
 	return cartridge_cpuRead(address);
@@ -85,6 +87,8 @@ void write6502(uint16_t address, uint8_t value) {
 				cpu_ppu_bus_write(address & 7, value);
 			} else if (cpu_ram_cs) {
 				cpuram[address & 0x7FF] = value;
+			} else {
+				cartridge_cpuWrite(address, value);
 			}
 		} else {
 			cartridge_cpuWrite(address, value);
@@ -143,7 +147,7 @@ void read_ines(const char* path) {
 	if (has_trainer) fseek(f, 512, SEEK_CUR);
 
 	ines.prg_rom_size_16k_chunks = header.prg_rom_16k_chunks;
-	ines.prg_rom = (uint8_t*)calloc(header.prg_rom_16k_chunks, 16384);
+	ines.prg_rom = (uint8_t*)malloc((size_t)header.prg_rom_16k_chunks * 16384);
 	if (!ines.prg_rom) exit(1);
 
 	fread(ines.prg_rom, 16384, header.prg_rom_16k_chunks, f);
@@ -151,10 +155,10 @@ void read_ines(const char* path) {
 	ines.chr_rom_size_8k_chunks = header.chr_rom_8k_chunks;
 	ines.is_8k_chr_ram = header.chr_rom_8k_chunks == 0;
 	if (ines.is_8k_chr_ram) {
-		ines.chr_rom_size_8k_chunks = 2;
+		ines.chr_rom_size_8k_chunks = 1;
 	}
 
-	ines.chr_rom = calloc(ines.chr_rom_size_8k_chunks, 8192);
+	ines.chr_rom = malloc((size_t)ines.chr_rom_size_8k_chunks * 8192);
 	if (!ines.chr_rom) exit(1);
 
 	if (!ines.is_8k_chr_ram) {
