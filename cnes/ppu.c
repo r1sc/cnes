@@ -285,7 +285,7 @@ void tick_frame() {
 			if (apu_timer == 3) {
 				apu_tick_triangle();
 			}
-			
+
 			if (apu_timer == 6) {
 				apu_tick_triangle();
 				apu_tick(scanline + 1);
@@ -353,12 +353,12 @@ void tick_frame() {
 						if (PPUMASK.show_sprites) {
 							for (size_t i = 0; i < 64; i++) {
 								int delta_y = scanline - (int)OAM[i].y;
-								if (delta_y >= 0 && delta_y < 8) {
+								if (delta_y >= 0 && (PPUCTRL.sprite_size == 0 ? delta_y < 8 : delta_y < 16)) {
 									if (num_sprites_on_row < 8) {
 										temp_oam[num_sprites_on_row].y = OAM[i].y;
-										temp_oam[num_sprites_on_row].x = OAM[i].x;
 										temp_oam[num_sprites_on_row].tile_index = OAM[i].tile_index;
 										temp_oam[num_sprites_on_row].attributes = OAM[i].attributes;
+										temp_oam[num_sprites_on_row].x = OAM[i].x;
 										num_sprites_on_row++;
 										if (num_sprites_on_row == 8) {
 											PPUSTATUS.sprite_overflow = 1;
@@ -374,18 +374,43 @@ void tick_frame() {
 					nametable_fetch();
 					if (PPUMASK.show_sprites) {
 						for (size_t i = 0; i < num_sprites_on_row; i++) {
-							nametable_address.fine_y_offset = (uint8_t)(scanline - (int)temp_oam[i].y);
-							bool flipped_y = (temp_oam[i].attributes & 0x80) != 0;
-							if (flipped_y) {
-								nametable_address.fine_y_offset = (uint8_t)(7 - nametable_address.fine_y_offset);
+							if (PPUCTRL.sprite_size) {
+								// Tall sprites
+
+								bool flipped_y = (temp_oam[i].attributes & 0x80) != 0;								
+								int y_offset = scanline - (int)temp_oam[i].y;
+
+								if (flipped_y) {
+									y_offset = 15 - y_offset;
+								}
+
+								uint8_t sprite_index = temp_oam[i].tile_index & 0xFE;
+								if (y_offset > 7) {
+									y_offset -= 8;
+									sprite_index++;
+								}
+
+								nametable_address.fine_y_offset = (uint8_t)y_offset;
+
+								nametable_address.bit_plane = 0;
+								nametable_address.tile_lo = sprite_index;
+								nametable_address.tile_hi = (sprite_index >> 4) & 0xF;
+								nametable_address.pattern_table_half = temp_oam[i].tile_index & 1;
+							} else {
+								// Normal sprites
+								nametable_address.fine_y_offset = (uint8_t)(scanline - (int)temp_oam[i].y);
+								bool flipped_y = (temp_oam[i].attributes & 0x80) != 0;
+								if (flipped_y) {
+									nametable_address.fine_y_offset = (uint8_t)(7 - nametable_address.fine_y_offset);
+								}
+
+								nametable_address.bit_plane = 0;
+								nametable_address.tile_lo = temp_oam[i].tile_index & 0xF;
+								nametable_address.tile_hi = (temp_oam[i].tile_index >> 4) & 0xF;
+								nametable_address.pattern_table_half = PPUCTRL.sprite_pattern_table_address;								
 							}
 
-							nametable_address.bit_plane = 0;
-							nametable_address.tile_lo = temp_oam[i].tile_index & 0xF;
-							nametable_address.tile_hi = (temp_oam[i].tile_index >> 4) & 0xF;
-							nametable_address.pattern_table_half = PPUCTRL.sprite_pattern_table_address;
 							sprite_lsb[i] = cartridge_ppuRead(nametable_address.value);
-
 							nametable_address.bit_plane = 1;
 							sprite_msb[i] = cartridge_ppuRead(nametable_address.value);
 						}
