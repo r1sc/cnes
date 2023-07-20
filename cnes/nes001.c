@@ -41,21 +41,16 @@ uint8_t read6502(uint16_t address) {
 	bool cpu_a15 = (address & BIT_15) != 0;
 	bool cpu_a14 = (address & BIT_14) != 0;
 	bool cpu_a13 = (address & BIT_13) != 0;
-	bool romsel = cpu_a15;
+	bool ppu_cs = !cpu_a15 && !cpu_a14 && cpu_a13;
+	bool cpu_ram_cs = !cpu_a15 && !cpu_a14 && !cpu_a13;
 
-	if (!romsel) {
-		bool ppu_cs = !cpu_a14 && cpu_a13;
-		bool cpu_ram_cs = !cpu_a14 && !cpu_a13;
-
-		if (ppu_cs) {
-			return cpu_ppu_bus_read(address & 7);
-		} else if (cpu_ram_cs) {
-			return cpuram[address & 0x7FF];
-		} else {
-			return cartridge_cpuRead(address);
-		}
+	if (ppu_cs) {
+		return cpu_ppu_bus_read(address & 7);
+	} else if (cpu_ram_cs) {
+		return cpuram[address & 0x7FF];
+	} else {
+		return cartridge_cpuRead(address);
 	}
-	return cartridge_cpuRead(address);
 }
 
 extern size_t cpu_timer;
@@ -77,22 +72,16 @@ void write6502(uint16_t address, uint8_t value) {
 		bool cpu_a15 = (address & BIT_15) != 0;
 		bool cpu_a14 = (address & BIT_14) != 0;
 		bool cpu_a13 = (address & BIT_13) != 0;
-		bool romsel = cpu_a15;
-
-		if (!romsel) {
-			bool ppu_cs = !cpu_a14 && cpu_a13;
-			bool cpu_ram_cs = !cpu_a14 && !cpu_a13;
-
-			if (ppu_cs) {
-				cpu_ppu_bus_write(address & 7, value);
-			} else if (cpu_ram_cs) {
-				cpuram[address & 0x7FF] = value;
-			} else {
-				cartridge_cpuWrite(address, value);
-			}
+		bool ppu_cs = !cpu_a15 && !cpu_a14 && cpu_a13;
+		bool cpu_ram_cs = !cpu_a15 && !cpu_a14 && !cpu_a13;
+		
+		if (ppu_cs) {
+			cpu_ppu_bus_write(address & 7, value);
+		} else if (cpu_ram_cs) {
+			cpuram[address & 0x7FF] = value;
 		} else {
 			cartridge_cpuWrite(address, value);
-		}
+		}		
 	}
 }
 
