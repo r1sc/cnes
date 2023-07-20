@@ -23,7 +23,7 @@ bus_write_t cartridge_ppuWrite;
 
 uint8_t ciram[2048];
 uint8_t cpuram[2048];
-uint8_t controller_status[2] = { 0xFF, 0xFF };
+uint8_t controller_status[2] = { 0, 0 };
 
 uint8_t buttons_down[2];
 
@@ -93,7 +93,6 @@ void write6502(uint16_t address, uint8_t value) {
 }
 
 void reset_machine() {
-	reset6502();
 	cartridge_reset();
 	clockticks6502 = 0;
 	cpu_timer = 0;
@@ -109,6 +108,7 @@ void reset_machine() {
 	for (size_t i = 0; i < sizeof(cpuram); i++) {
 		cpuram[i] <<= 1;
 	}
+	reset6502();
 }
 
 
@@ -133,6 +133,9 @@ void read_ines(const char* path) {
 		ines.mapper_number = (header.flags[0] >> 4) | (header.flags[1] & 0xF0);
 	}
 
+	uint8_t nFileType = 1;
+	if ((header.flags[2] & 0x0C) == 0x08) nFileType = 2;
+
 	uint8_t a10 = header.flags[0] & 1;
 	ines.ppuaddress_ciram_a10_shift_count = (a10 == 0) ? 11 : 10;
 
@@ -140,23 +143,22 @@ void read_ines(const char* path) {
 	if (has_trainer) fseek(f, 512, SEEK_CUR);
 
 	ines.prg_rom_size_16k_chunks = header.prg_rom_16k_chunks;
-	ines.prg_rom_banks = (PRG_ROM_BANK*)calloc(header.prg_rom_16k_chunks, 16384);
-	if (!ines.prg_rom_banks) exit(1);
+	ines.prg_rom = (uint8_t*)calloc(header.prg_rom_16k_chunks, 16384);
+	if (!ines.prg_rom) exit(1);
 
-	fread(ines.prg_rom_banks, 16384, header.prg_rom_16k_chunks, f);
+	fread(ines.prg_rom, 16384, header.prg_rom_16k_chunks, f);
 
-	ines.chr_rom_size_4k_chunks = header.chr_rom_8k_chunks * 2;
-	/*size_t chr_rom_size = header.chr_rom_8k_chunks == 0 ? 8192 : 8192 * (size_t)header.chr_rom_8k_chunks;*/
+	ines.chr_rom_size_8k_chunks = header.chr_rom_8k_chunks;
 	ines.is_8k_chr_ram = header.chr_rom_8k_chunks == 0;
 	if (ines.is_8k_chr_ram) {
-		ines.chr_rom_size_4k_chunks = 2; // CHR RAM
+		ines.chr_rom_size_8k_chunks = 2;
 	}
 
-	ines.chr_rom_banks = (CHR_ROM_BANK*)calloc(ines.chr_rom_size_4k_chunks, 4096);
-	if (!ines.chr_rom_banks) exit(1);
+	ines.chr_rom = calloc(ines.chr_rom_size_8k_chunks, 8192);
+	if (!ines.chr_rom) exit(1);
 
-	if (header.chr_rom_8k_chunks > 0) {
-		fread(ines.chr_rom_banks, 4096, ines.chr_rom_size_4k_chunks, f);
+	if (!ines.is_8k_chr_ram) {
+		fread(ines.chr_rom, 8192, ines.chr_rom_size_8k_chunks, f);
 	}
 
 	fclose(f);
@@ -167,8 +169,8 @@ void read_ines(const char* path) {
 void free_ines() {
 	if (rom_loaded) {
 		rom_loaded = false;
-		free(ines.chr_rom_banks);
-		free(ines.prg_rom_banks);
+		free(ines.chr_rom);
+		free(ines.prg_rom);
 	}
 }
 

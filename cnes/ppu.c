@@ -94,6 +94,15 @@ void ppu_internal_bus_write(uint16_t address, uint8_t value) {
 	}
 }
 
+uint8_t ppu_internal_bus_read(uint16_t address) {
+	if (address >= 0x3F00) {
+		// Palette control
+		uint8_t index = address & 0x3;
+		return palette[index == 0 ? 0 : (address & 0x1F)];
+	}
+	return cartridge_ppuRead(address);
+}
+
 
 uint8_t ppudata_buffer = 0;
 uint8_t cpu_ppu_bus_read(uint8_t address) {
@@ -110,7 +119,7 @@ uint8_t cpu_ppu_bus_read(uint8_t address) {
 			break;
 		case 7:
 			value = ppudata_buffer;
-			ppudata_buffer = cartridge_ppuRead(V.value);
+			ppudata_buffer = ppu_internal_bus_read(V.value);
 
 			if (V.value >= 0x3f00) value = ppudata_buffer; // Do not delay palette reads
 
@@ -440,7 +449,7 @@ void tick_frame() {
 						}
 					}
 
-					uint16_t output_palette_location = 0x00;
+					uint16_t output_palette_location = 0x3f00;
 					uint8_t output_pixel = bg_pixel;
 					uint8_t output_palette = bg_palette;
 
@@ -448,20 +457,17 @@ void tick_frame() {
 						if (bg_pixel == 0 && sprite_pixel != 0) {
 							output_pixel = sprite_pixel;
 							output_palette = sprite_palette;
-							output_palette_location = 0x10;
+							output_palette_location = 0x3f10;
 						} else if (sprite_pixel != 0 && bg_pixel != 0) {
 							if (((temp_oam[first_found].attributes >> 5) & 1) == 0) {
 								output_pixel = sprite_pixel;
 								output_palette = sprite_palette;
-								output_palette_location = 0x10;
+								output_palette_location = 0x3f10;
 							}
 						}
 					}
 
-					uint16_t palette_address = (uint16_t)(output_palette_location | output_palette | output_pixel);
-					uint8_t index = palette_address & 0x3;
-					uint8_t palette_index = palette[index == 0 ? 0 : (palette_address & 0x1F)];
-
+					uint8_t palette_index = ppu_internal_bus_read((uint16_t)(output_palette_location | output_palette | output_pixel));
 					pixformat_t* pixel = &framebuffer[(size_t)256 * scanline + (dot - 1)];
 					pixel->r = palette_colors[palette_index * 3 + 0];
 					pixel->g = palette_colors[palette_index * 3 + 1];

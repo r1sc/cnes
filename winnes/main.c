@@ -231,6 +231,9 @@ DWORD WINAPI render_thread(void* param) {
 	while (running) {
 		now = (double)GetTickCount64();
 		double delta = now - last;
+		if (delta > 1000) {
+			delta = dt;
+		}
 		last = now;
 		accum += delta;
 		secondacc += delta;
@@ -294,7 +297,7 @@ int APIENTRY WinMain(
 	LPSTR     lpCmdLine,
 	int       nShowCmd
 ) {
-	load_ines("roms/ducktales.nes");
+	load_ines("roms/ppu_tests/palette_ram.nes");
 	create_window();
 
 	HANDLE threadId = CreateThread(NULL, 0, render_thread, NULL, 0, NULL);

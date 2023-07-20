@@ -6,34 +6,32 @@
 #include "nes001.h"
 
 //Control regs
-static bool chr_rom_mode = false;
-static uint8_t prg_rom_mode = 0;
-static uint8_t mirroring = 0;
-
-// CHR option
-static uint8_t chr_bank_0 = 0;
-static uint8_t chr_bank_1 = 0;
-
-
-// PRG option
-static uint8_t prg_bank;
-static bool prg_ram_chip_enabled = false;
-
-static uint8_t ram[8192];
-
+static uint8_t control_reg = 0;
 static uint8_t sr = 0;
 static uint8_t shift_count = 0;
 
+static uint8_t chr_bank_4_lo = 0;
+static uint8_t chr_bank_4_hi = 0;
+static uint8_t char_bank_8 = 0;
+
+static uint8_t prg_bank_lo, prg_bank_hi, prg_bank_32;
+
+static uint8_t mirroring = 0;
+
+static uint8_t ram[8192];
+
+
 void mmc1_reset() {
+	control_reg = 0x1c;
 	sr = 0;
 	shift_count = 0;
-	mirroring = 0;
-	prg_rom_mode = 3;
-	chr_rom_mode = true;
-	chr_bank_0 = 0;
-	chr_bank_1 = 0;
-	prg_bank = 0;
-	prg_ram_chip_enabled = false;
+
+	mirroring = 3;
+	chr_bank_4_lo = 0;
+	chr_bank_4_hi = 0;
+	prg_bank_lo = 0;
+	prg_bank_hi = ines.prg_rom_size_16k_chunks - 1;
+	prg_bank_32 = 0;
 }
 
 static inline uint16_t ppu_addr_to_ciram_addr(uint16_t ppuaddr) {
@@ -62,21 +60,28 @@ uint8_t mmc1_ppuRead(uint16_t address) {
 		// CIRAM Enabled
 		return ciram[ppu_addr_to_ciram_addr(address)];
 	}
-	switch (chr_rom_mode) {
-		case false:
-			// switch 8 KB at a time
-			return ines.chr_rom_banks[0][address & 0x1FFF]; // TODO
-			break;
-		case true:
-			// switch two separate 4 KB banks
-			if (address >= 0x1000) {
-				return ines.chr_rom_banks[0][(chr_bank_1 << 12) | (address & 0x0FFF)]; // TODO
+	if (address < 0x2000) {
+		if (ines.is_8k_chr_ram) {
+			return ines.chr_rom[address];
+		} else {
+			if (control_reg & 0b10000) {
+				// switch two separate 4 KB banks
+				if (address < 0x1000) {
+					return ines.chr_rom[chr_bank_4_lo * 0x1000 + (address & 0x0FFF)];
+
+				} else {
+					return ines.chr_rom[chr_bank_4_hi * 0x1000 + (address & 0x0FFF)];
+				}
 			} else {
-				return ines.chr_rom_banks[0][(chr_bank_0 << 12) | (address & 0x0FFF)]; // TODO
+				// switch 8 KB at a time
+				return ines.chr_rom[char_bank_8 * 0x2000 + (address & 0x1FFF)];
 			}
-			break;
+
+		}
 	}
+
 	assert(false);
+
 	return 0;
 }
 
@@ -85,22 +90,9 @@ void mmc1_ppuWrite(uint16_t address, uint8_t value) {
 		// CIRAM Enabled
 		ciram[ppu_addr_to_ciram_addr(address)] = value;
 	}
-	//if (ines.chr_rom_size_8k_chunks == 0) {
-	//	// CHR RAM
-	//	ines.chr_rom[address & 0x1FFF] = value;
-	//} else {
-		switch (chr_rom_mode) {
-			case false:
-				// switch 8 KB at a time
-				ines.chr_rom_banks[0][address & 0x1FFF] = value; // TODO
-				break;
-			case true:
-			{
-				int hej = 12;
-			}
-				break;
-		}
-	//}
+	else if (address < 0x2000 && ines.is_8k_chr_ram) {
+		ines.chr_rom[address] = value;
+	}
 }
 
 uint8_t mmc1_cpuRead(uint16_t address) {
@@ -109,28 +101,14 @@ uint8_t mmc1_cpuRead(uint16_t address) {
 	}
 
 	if (address >= 0x8000) {
-		switch (prg_rom_mode) {
-			case 0:
-			case 1:
-				// switch 32 KB at $8000, ignoring low bit of bank number
-				return ines.prg_rom_banks[(prg_bank >> 1) && 0b1111][address & 0x7FFF];
-				break;
-			case 2:
-				// fix first bank at $8000 and switch 16 KB bank at $C000
-				if (address >= 0xC000) {
-					return ines.prg_rom_banks[prg_bank][address & 0x3FFF];
-				} else {
-					return ines.prg_rom_banks[0][address & 0x3FFF];
-				}
-				break;
-			case 3:
-				// fix last bank at $C000 and switch 16 KB bank at $8000)
-				if (address >= 0xC000) {
-					return ines.prg_rom_banks[ines.prg_rom_size_16k_chunks - 1][address & 0x3FFF];
-				} else {
-					return ines.prg_rom_banks[prg_bank][address & 0x3FFF];
-				}
-				break;
+		if (control_reg & 0b01000) {
+			if (address >= 0xC000) {
+				return ines.prg_rom[(prg_bank_hi % ines.prg_rom_size_16k_chunks) * 0x4000 + (address & 0x3fff)];
+			} else {
+				return ines.prg_rom[(prg_bank_lo % ines.prg_rom_size_16k_chunks) * 0x4000 + (address & 0x3fff)];
+			}
+		} else {
+			return ines.prg_rom[prg_bank_32 * 0x8000 + (address & 0x7FFF)];
 		}
 	}
 	return 0;
@@ -152,23 +130,43 @@ void mmc1_cpuWrite(uint16_t address, uint8_t value) {
 					case 0:
 						// Control
 						mirroring = sr & 0b11;
-						prg_rom_mode = (sr >> 2) & 0b11;
-						chr_rom_mode = (sr & 0x10) != 0;
+						control_reg = sr & 0x1f;
 						break;
 					case 1:
-						// CHR bank 0
-						chr_bank_0 = sr & 0x1F;
-						if (!chr_rom_mode) {
-							chr_bank_0 = chr_bank_0 & 0x1E;
+						// CHR bank 0						
+						if (control_reg & 0b10000) {
+							chr_bank_4_lo = sr & 0x1f;
+						} else {
+							char_bank_8 = sr & 0x1e;
 						}
 						break;
 					case 2:
-						chr_bank_1 = sr & 0x1F;
+						if (control_reg & 0b10000) {
+							chr_bank_4_hi = sr & 0x1F;
+						}
 						break;
 					case 3:
-						prg_bank = sr & 0b1111;
-						prg_ram_chip_enabled = sr & 0b10000;
-						break;
+					{
+						uint8_t prg_mode = (control_reg >> 2) & 0x03;
+						switch (prg_mode) {
+							case 0:
+							case 1:
+								// switch 32 KB at $8000
+								prg_bank_32 = (sr & 0x0e) >> 1;
+								break;
+							case 2:
+								// fix first bank at $8000 and switch 16 KB bank at $C000
+								prg_bank_lo = 0;
+								prg_bank_hi = sr & 0x0f;
+								break;
+							case 3:
+								// fix last bank at $C000 and switch 16 KB bank at $8000)
+								prg_bank_lo = sr & 0x0f;
+								prg_bank_hi = ines.prg_rom_size_16k_chunks - 1;
+								break;
+						}
+					}
+					break;
 				}
 				sr = 0;
 				shift_count = 0;

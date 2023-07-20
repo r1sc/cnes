@@ -920,6 +920,9 @@ void irq6502() {
 }
 
 void step6502() {
+	if (pc == 0x9f91) {
+		int hej = 23;
+	}
 	opcode = read6502(pc++);
 	status |= FLAG_CONSTANT;
 
