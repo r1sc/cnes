@@ -5,6 +5,30 @@
 #include "fake6502.h"
 #include "include/cnes.h"
 
+/******* TIMER **********/
+typedef struct {
+	uint16_t current;
+	uint16_t reload;
+} timer_t;
+
+static bool timer_tick(timer_t* timer) {
+	if (timer->current == 0) {
+		timer->current = timer->reload;
+		return true;
+	} else {
+		timer->current--;
+		return false;
+	}
+}
+
+/******** ENVELOPE *********/
+typedef struct {
+	bool start;
+	timer_t timer;
+	uint8_t volume;
+	uint8_t decay_level_counter;
+} envelope_t;
+
 static uint8_t duty_cycles[4] = { 0b10000000, 0b11000000, 0b11110000, 0b00111111 };
 
 typedef struct {
@@ -45,7 +69,8 @@ void pulse_write_reg(apu_pulse_t* pulse, uint8_t address, uint8_t value) {
 		case 3:
 			pulse->reload = (pulse->reload & 0xFF) | ((value & 0b111) << 8);
 			pulse->timer = pulse->reload;
-			pulse->length_counter = length_table[(value & 0xF8) >> 3];
+			pulse->length_counter = length_table[value >> 3];
+			pulse->sequencer_pos = 0; // Reset phase
 			break;
 	}
 }
