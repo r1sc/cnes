@@ -25,8 +25,6 @@ uint8_t ciram[2048];
 uint8_t cpuram[2048];
 uint8_t controller_status[2] = { 0, 0 };
 
-uint8_t buttons_down[2];
-
 uint8_t read6502(uint16_t address) {
 	if (address == 0x4016 || address == 0x4017) {
 		uint8_t controller_id = address & 1;
