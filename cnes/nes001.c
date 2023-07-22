@@ -36,20 +36,15 @@ uint8_t read6502(uint16_t address) {
 	} else if ((address >= 0x4000 && address <= 0x4013) || address == 0x4015 || address == 0x4017) {
 		// APU
 		return apu_read(address);
-	}
-
-	bool cpu_a15 = (address & BIT_15) != 0;
-	bool cpu_a14 = (address & BIT_14) != 0;
-	bool cpu_a13 = (address & BIT_13) != 0;
-	bool ppu_cs = !cpu_a15 && !cpu_a14 && cpu_a13;
-	bool cpu_ram_cs = !cpu_a15 && !cpu_a14 && !cpu_a13;
-
-	if (ppu_cs) {
-		return cpu_ppu_bus_read(address & 7);
-	} else if (cpu_ram_cs) {
-		return cpuram[address & 0x7FF];
-	} else {
+	} else if (address >= 0x4000) {
+		// Cart
 		return cartridge_cpuRead(address);
+	} else if (address >= 0x2000) {
+		// PPU
+		return cpu_ppu_bus_read(address & 7);
+	} else {
+		// CPU
+		return cpuram[address & 0x7FF];
 	}
 }
 
@@ -68,20 +63,15 @@ void write6502(uint16_t address, uint8_t value) {
 		controller_status[1] = buttons_down[1];
 	} else if ((address >= 0x4000 && address <= 0x4013) || address == 0x4015 || address == 0x4017) {
 		apu_write(address, value);
+	} else if (address >= 0x4000) {
+		// Cart
+		cartridge_cpuWrite(address, value);
+	} else if (address >= 0x2000) {
+		// PPU
+		cpu_ppu_bus_write(address & 7, value);
 	} else {
-		bool cpu_a15 = (address & BIT_15) != 0;
-		bool cpu_a14 = (address & BIT_14) != 0;
-		bool cpu_a13 = (address & BIT_13) != 0;
-		bool ppu_cs = !cpu_a15 && !cpu_a14 && cpu_a13;
-		bool cpu_ram_cs = !cpu_a15 && !cpu_a14 && !cpu_a13;
-		
-		if (ppu_cs) {
-			cpu_ppu_bus_write(address & 7, value);
-		} else if (cpu_ram_cs) {
-			cpuram[address & 0x7FF] = value;
-		} else {
-			cartridge_cpuWrite(address, value);
-		}		
+		// CPU
+		cpuram[address & 0x7FF] = value;
 	}
 }
 

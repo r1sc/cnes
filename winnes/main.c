@@ -240,9 +240,9 @@ DWORD WINAPI render_thread(void* param) {
 
 		if (secondacc >= 1000) {
 			fps = frame_counter;
-			/*char title[128];
+			char title[128];
 			sprintf(title, "WinNES - (%d fps = %d frames / sec)\0", fps, num_frames);
-			SetWindowText(hwnd, title);*/
+			SetWindowText(hwnd, title);
 			frame_counter = 0;
 			num_frames = 0;
 			secondacc -= 1000;
