@@ -74,7 +74,7 @@ uint8_t mmc1_ppuRead(uint16_t address) {
 				}
 			} else {
 				// switch 8 KB at a time
-				return ines.chr_rom[char_bank_8 * 0x2000 + (address & 0x1FFF)];
+				return ines.chr_rom[(char_bank_8 % ines.chr_rom_size_8k_chunks) * 0x2000 + (address & 0x1FFF)];
 			}
 
 		}

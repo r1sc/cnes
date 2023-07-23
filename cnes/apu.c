@@ -72,12 +72,33 @@ typedef struct {
 	uint8_t sequencer_pos;
 	uint8_t current_output;	
 	envelope_t envelope;
+
+	bool sweep_enabled;
+	uint16_t sweep_divider_current;
+	uint16_t sweep_divider_reload;
+	bool sweep_reload_flag;
+	bool sweep_negate;
+	uint8_t sweep_shift_count;
+	uint16_t sweep_target_period;
+
 } apu_pulse_t;
 
 static uint8_t length_table[] = { 10, 254, 20,  2, 40,  4, 80,  6,
 							160,   8, 60, 10, 14, 12, 26, 14,
 							12,  16, 24, 18, 48, 20, 96, 22,
 							192,  24, 72, 26, 16, 28, 32, 30 };
+
+static void pulse_calculate_sweep_target(apu_pulse_t* pulse) {
+	int change_amount = (int)(pulse->timer.reload >> pulse->sweep_shift_count);
+	if (pulse->sweep_negate) {
+		change_amount = -change_amount;
+	}
+	int target_period = (int)pulse->timer.reload + change_amount;
+	if (target_period < 0) {
+		target_period = 0;
+	}
+	pulse->sweep_target_period = (uint16_t)target_period;
+}
 
 static void pulse_write_reg(apu_pulse_t* pulse, uint8_t address, uint8_t value) {
 	switch (address) {
@@ -92,10 +113,16 @@ static void pulse_write_reg(apu_pulse_t* pulse, uint8_t address, uint8_t value) 
 		}
 		break;
 		case 1:
-			// APU Sweep, do later
+			pulse->sweep_enabled = value & 0x80;
+			pulse->sweep_divider_reload = (value >> 4) & 0b111;
+			pulse->sweep_negate = value & 0b1000;
+			pulse->sweep_shift_count = value & 0b111;
+
+			pulse->sweep_reload_flag = true;
 			break;
 		case 2:
 			pulse->timer.reload = (pulse->timer.reload & 0x700) | value;
+			//pulse_calculate_sweep_target(pulse);
 			break;
 		case 3:
 			pulse->timer.reload = (pulse->timer.reload & 0xFF) | ((value & 0b111) << 8);
@@ -103,15 +130,17 @@ static void pulse_write_reg(apu_pulse_t* pulse, uint8_t address, uint8_t value) 
 			pulse->lengthcounter.value = length_table[value >> 3];
 			pulse->sequencer_pos = 0; // Reset phase
 			pulse->envelope.start = true;
+			//pulse_calculate_sweep_target(pulse);
 			break;
 	}
 }
 
-static void pulse_tick(apu_pulse_t* pulse) {
-	if (timer_tick(&pulse->timer)) {
-		if (pulse->lengthcounter.value > 0 && pulse->timer.reload >= 8) {
-			pulse->current_output = ((pulse->sequence >> pulse->sequencer_pos) & 1) ? envelope_get_volume(&pulse->envelope) : 0;
+static void pulse_tick(apu_pulse_t* pulse, bool sweep_ones_complement) {
+	pulse_calculate_sweep_target(pulse);
 
+	if (timer_tick(&pulse->timer)) {
+		if (pulse->lengthcounter.value > 0 && pulse->timer.reload >= 8 && pulse->sweep_target_period <= 0x7FF) {
+			pulse->current_output = ((pulse->sequence >> pulse->sequencer_pos) & 1) ? envelope_get_volume(&pulse->envelope) : 0;
 		} else {
 			pulse->current_output = 0;
 		}
@@ -121,6 +150,19 @@ static void pulse_tick(apu_pulse_t* pulse) {
 		} else {
 			pulse->sequencer_pos--;
 		}
+	}
+}
+
+static void clock_sweep_unit(apu_pulse_t* pulse) {
+	if (pulse->sweep_divider_current == 0 && pulse->sweep_enabled && pulse->timer.reload >= 8 && pulse->sweep_target_period <= 0x7FF) {
+		pulse->timer.reload = pulse->sweep_target_period;
+		//pulse_calculate_sweep_target(pulse);
+	}
+	if (pulse->sweep_divider_current == 0 || pulse->sweep_reload_flag) {
+		pulse->sweep_divider_current = pulse->sweep_divider_reload;
+		pulse->sweep_reload_flag = false;
+	} else {
+		pulse->sweep_divider_current--;
 	}
 }
 
@@ -260,7 +302,10 @@ void apu_write(uint16_t address, uint8_t value) {
 	} else if (address == 0x4017) {
 		five_step_mode = value & 0b10000000;
 		interrupt_inhibit = value = 0b01000000;
-		apu_cycle_counter = 0; // Reset frame counter
+		//apu_cycle_counter = 0; // Reset frame counter
+		if (interrupt_inhibit) {
+			frame_interrupt_flag = false;
+		}
 
 	}
 }
@@ -294,11 +339,14 @@ static void clock_linear_counters() {
 	}
 }
 
-static void clock_length_counters() {
+static void clock_length_counters_and_sweep_units() {
 	clock_length_counter(&pulse1.lengthcounter);
 	clock_length_counter(&pulse2.lengthcounter);
 	clock_length_counter(&triangle.lengthcounter);
 	clock_length_counter(&noise.lengthcounter);
+
+	clock_sweep_unit(&pulse1);
+	clock_sweep_unit(&pulse2);
 }
 
 static void clock_envelopes() {
@@ -322,7 +370,7 @@ void apu_tick(uint16_t scanline) {
 		case 7456:
 			clock_envelopes();
 			clock_linear_counters();
-			clock_length_counters();
+			clock_length_counters_and_sweep_units();
 			break;
 		case 11185:
 			clock_envelopes();
@@ -336,7 +384,7 @@ void apu_tick(uint16_t scanline) {
 				}
 				clock_envelopes();
 				clock_linear_counters();
-				clock_length_counters();
+				clock_length_counters_and_sweep_units();
 			}
 			break;
 		case 14915:
@@ -348,7 +396,7 @@ void apu_tick(uint16_t scanline) {
 			if (five_step_mode) {
 				clock_envelopes();
 				clock_linear_counters();
-				clock_length_counters();
+				clock_length_counters_and_sweep_units();
 			}
 			break;
 		case 18641:
@@ -359,10 +407,10 @@ void apu_tick(uint16_t scanline) {
 	}
 
 	if (pulse1_enabled) {
-		pulse_tick(&pulse1);
+		pulse_tick(&pulse1, true);
 	}
 	if (pulse2_enabled) {
-		pulse_tick(&pulse2);
+		pulse_tick(&pulse2, false);
 	}
 	if (noise_enabled) {
 		noise_tick();
