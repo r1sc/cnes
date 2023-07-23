@@ -21,105 +21,132 @@ static bool timer_tick(timer_t* timer) {
 	}
 }
 
+/********* LENGTH COUNTER *********/
+typedef struct {
+	uint8_t value;
+	bool halt;
+} lengthcounter_t;
+
+static void clock_length_counter(lengthcounter_t* length_counter) {
+	if (!length_counter->halt && length_counter->value > 0) {
+		length_counter->value--;
+	}
+}
+
 /******** ENVELOPE *********/
 typedef struct {
 	bool start;
 	timer_t timer;
-	uint8_t volume;
-	uint8_t decay_level_counter;
+	uint8_t decay_level;
+	bool constant_volume;
 } envelope_t;
+
+static void clock_envelope(envelope_t* envelope, bool loop_flag) {
+	if (!envelope->start) {
+		if (timer_tick(&envelope->timer)) {
+			if (envelope->decay_level > 0) {
+				envelope->decay_level--;
+			} else if(loop_flag) {
+				envelope->decay_level = 15;
+			}
+		}
+	} else {
+		envelope->start = false;
+		envelope->decay_level = 15;
+		envelope->timer.current = envelope->timer.reload;
+	}
+}
+
+uint8_t envelope_get_volume(envelope_t* envelope) {
+	return envelope->constant_volume ? (uint8_t)envelope->timer.reload : envelope->decay_level;
+}
+
+/********* PULSE *******/
 
 static uint8_t duty_cycles[4] = { 0b10000000, 0b11000000, 0b11110000, 0b00111111 };
 
 typedef struct {
-	uint16_t timer;
-	uint16_t reload;
+	timer_t timer;
+	lengthcounter_t lengthcounter;
 	uint8_t sequence;
 	uint8_t sequencer_pos;
-	uint8_t current_output;
-	uint8_t length_counter;
-	bool length_counter_halt;
-	bool constant_volume;
-	uint8_t volume;
+	uint8_t current_output;	
+	envelope_t envelope;
 } apu_pulse_t;
 
-uint8_t length_table[] = { 10, 254, 20,  2, 40,  4, 80,  6,
+static uint8_t length_table[] = { 10, 254, 20,  2, 40,  4, 80,  6,
 							160,   8, 60, 10, 14, 12, 26, 14,
 							12,  16, 24, 18, 48, 20, 96, 22,
 							192,  24, 72, 26, 16, 28, 32, 30 };
 
-void pulse_write_reg(apu_pulse_t* pulse, uint8_t address, uint8_t value) {
+static void pulse_write_reg(apu_pulse_t* pulse, uint8_t address, uint8_t value) {
 	switch (address) {
 		case 0:
 		{
 			uint8_t duty_cycle_index = (value >> 6) & 0b11;
 			pulse->sequence = duty_cycles[duty_cycle_index];
 
-			pulse->length_counter_halt = (value & 0b00100000) != 0;
-			pulse->constant_volume = (value & 0b00010000) != 0;
-			pulse->volume = value & 0b1111;
+			pulse->lengthcounter.halt = (value & 0b00100000) != 0;
+			pulse->envelope.constant_volume = (value & 0b00010000) != 0;
+			pulse->envelope.timer.reload = value & 0b1111;
 		}
 		break;
 		case 1:
 			// APU Sweep, do later
 			break;
 		case 2:
-			pulse->reload = (pulse->reload & 0x700) | value;
+			pulse->timer.reload = (pulse->timer.reload & 0x700) | value;
 			break;
 		case 3:
-			pulse->reload = (pulse->reload & 0xFF) | ((value & 0b111) << 8);
-			pulse->timer = pulse->reload;
-			pulse->length_counter = length_table[value >> 3];
+			pulse->timer.reload = (pulse->timer.reload & 0xFF) | ((value & 0b111) << 8);
+			pulse->timer.current = pulse->timer.reload;
+			pulse->lengthcounter.value = length_table[value >> 3];
 			pulse->sequencer_pos = 0; // Reset phase
+			pulse->envelope.start = true;
 			break;
 	}
 }
 
-void pulse_tick(apu_pulse_t* pulse) {
-	if (pulse->timer == 0) {
-		pulse->timer = pulse->reload;
-		if (pulse->length_counter > 0) {
-			pulse->current_output = (pulse->sequence >> pulse->sequencer_pos) & 1;
+static void pulse_tick(apu_pulse_t* pulse) {
+	if (timer_tick(&pulse->timer)) {
+		if (pulse->lengthcounter.value > 0 && pulse->timer.reload >= 8) {
+			pulse->current_output = ((pulse->sequence >> pulse->sequencer_pos) & 1) ? envelope_get_volume(&pulse->envelope) : 0;
 
-			if (pulse->sequencer_pos == 0) {
-				pulse->sequencer_pos = 7;
-			} else {
-				pulse->sequencer_pos--;
-			}
 		} else {
 			pulse->current_output = 0;
 		}
 
-	} else {
-		pulse->timer--;
+		if (pulse->sequencer_pos == 0) {
+			pulse->sequencer_pos = 7;
+		} else {
+			pulse->sequencer_pos--;
+		}
 	}
 }
 
 struct {
-	uint16_t timer;
-	uint16_t reload;
-	uint8_t length_counter;
+	timer_t timer;
+	lengthcounter_t lengthcounter;
 	uint16_t linear_counter;
 	uint16_t linear_counter_reload;
-	bool linear_counter_reload_flag;
-	bool control_flag;
+	bool linear_counter_reload_flag;	
 	uint8_t current_output;
 	uint8_t sequencer_pos;
 } triangle = { 0 };
 
-void triangle_write_reg(uint8_t address, uint8_t value) {
+static void triangle_write_reg(uint8_t address, uint8_t value) {
 	switch (address) {
 		case 0:
 			triangle.linear_counter_reload = value & 0b01111111;
-			triangle.control_flag = (value & 0x80) == 0x80;
+			triangle.lengthcounter.halt = (value & 0x80) == 0x80;
 			break;
 		case 2:
-			triangle.reload = (triangle.reload & 0x700) | value;
+			triangle.timer.reload = (triangle.timer.reload & 0x700) | value;
 			break;
 		case 3:
-			triangle.length_counter = length_table[(value & 0xF8) >> 3];
-			triangle.reload = (triangle.reload & 0xFF) | ((value & 0b111) << 8);
-			triangle.timer = triangle.reload;
+			triangle.lengthcounter.value = length_table[(value & 0xF8) >> 3];
+			triangle.timer.reload = (triangle.timer.reload & 0xFF) | ((value & 0b111) << 8);
+			triangle.timer.current = triangle.timer.reload;
 			triangle.linear_counter_reload_flag = true;
 			break;
 	}
@@ -130,20 +157,68 @@ static uint8_t triangle_sequence[] = {
 	0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15
 };
 
-void triangle_tick() {
-	if (triangle.timer == 0) {
-		triangle.timer = triangle.reload;
-		if (triangle.linear_counter > 0 && triangle.length_counter > 0) {
+static void triangle_tick() {
+	if (timer_tick(&triangle.timer)) {
+		if (triangle.linear_counter > 0 && triangle.lengthcounter.value > 0) {
+			triangle.current_output = triangle_sequence[triangle.sequencer_pos];
+
 			if (triangle.sequencer_pos == 31) {
 				triangle.sequencer_pos = 0;
 			} else {
 				triangle.sequencer_pos++;
 			}
-
-			triangle.current_output = triangle_sequence[triangle.sequencer_pos];
 		}
-	} else if (triangle.timer > 0) {
-		triangle.timer--;
+	}
+}
+
+/******** NOISE ************/
+static uint16_t noise_period_table[] = { 4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068 };
+
+static struct {
+	timer_t timer;
+	lengthcounter_t lengthcounter;
+	uint8_t period_select;
+	uint8_t current_output;
+
+	uint16_t shift_reg;
+	bool mode;
+
+	envelope_t envelope;
+} noise;
+
+static void noise_reset() {
+	noise.shift_reg = 1;
+}
+
+static void noise_tick() {
+	if (timer_tick(&noise.timer)) {
+		uint16_t feedback = (noise.shift_reg & 1) ^ ((noise.mode ? (noise.shift_reg >> 6) : (noise.shift_reg >> 1)) & 1);
+		noise.shift_reg >>= 1;
+		noise.shift_reg = (noise.shift_reg & 0x3FFF) | (feedback << 14);
+
+		if ((noise.shift_reg & 1) == 1 || noise.lengthcounter.value == 0) {
+			noise.current_output = 0;
+		} else {
+			noise.current_output = envelope_get_volume(&noise.envelope);
+		}
+	}
+}
+
+static void noise_write_reg(uint8_t address, uint8_t value) {
+	switch (address) {
+		case 0:
+			noise.lengthcounter.halt = value & 0b100000;
+			noise.envelope.constant_volume = value & 0b10000;
+			noise.envelope.timer.reload = value & 0b1111;
+			break;
+		case 2:
+			noise.timer.reload = noise_period_table[value & 0b1111];
+			noise.timer.current = noise.timer.reload;
+			break;
+		case 3:
+			noise.lengthcounter.value = length_table[value >> 3];
+			noise.envelope.start = true;
+			break;
 	}
 }
 
@@ -154,10 +229,11 @@ static bool five_step_mode = false;
 static bool interrupt_inhibit = true;
 static bool frame_interrupt_flag = false;
 
-bool pulse1_enabled = false;
-bool pulse2_enabled = false;
-bool triangle_enabled = false;
-bool dmc_enabled = false;
+static bool pulse1_enabled = false;
+static bool pulse2_enabled = false;
+static bool triangle_enabled = false;
+static bool noise_enabled = false;
+static bool dmc_enabled = false;
 
 void apu_write(uint16_t address, uint8_t value) {
 	if (address >= 0x4000 && address <= 0x4003) {
@@ -166,16 +242,20 @@ void apu_write(uint16_t address, uint8_t value) {
 		pulse_write_reg(&pulse2, address & 0b11, value);
 	} else if (address >= 0x4008 && address <= 0x400B) {
 		triangle_write_reg(address & 0b11, value);
+	} else if(address >= 0x400C && address <= 0x400F) {
+		noise_write_reg(address & 0b11, value);
 	} else if (address == 0x4015) {
 		// Status
 		pulse1_enabled = value & 1;
 		pulse2_enabled = value & 2;
 		triangle_enabled = value & 4;
-		dmc_enabled = value & 8;
+		noise_enabled = value & 8;
+		dmc_enabled = value & 16;
 
-		if (!pulse1_enabled) pulse1.length_counter = 0;
-		if (!pulse2_enabled) pulse2.length_counter = 0;
-		if (!triangle_enabled) triangle.length_counter = 0;
+		if (!pulse1_enabled) pulse1.lengthcounter.value = 0;
+		if (!pulse2_enabled) pulse2.lengthcounter.value = 0;
+		if (!triangle_enabled) triangle.lengthcounter.value = 0;
+		if (!noise_enabled) noise.lengthcounter.value = 0;
 
 	} else if (address == 0x4017) {
 		five_step_mode = value & 0b10000000;
@@ -190,9 +270,10 @@ uint8_t apu_read(uint16_t address) {
 		uint8_t value =
 			(interrupt_inhibit ? 0x80 : 0)
 			| (frame_interrupt_flag ? 0x40 : 0)
-			| (triangle.length_counter > 0 ? 4 : 0)
-			| (pulse2.length_counter > 0 ? 2 : 0)
-			| (pulse1.length_counter > 0 ? 1 : 0);
+			| (noise.lengthcounter.value > 0 ? 8 : 0)
+			| (triangle.lengthcounter.value > 0 ? 4 : 0)
+			| (pulse2.lengthcounter.value > 0 ? 2 : 0)
+			| (pulse1.lengthcounter.value > 0 ? 1 : 0);
 
 		frame_interrupt_flag = false;
 		return value;
@@ -201,30 +282,29 @@ uint8_t apu_read(uint16_t address) {
 	return 0;
 }
 
-void clock_linear_counters() {
+static void clock_linear_counters() {
 	if (triangle.linear_counter_reload_flag) {
 		triangle.linear_counter = triangle.linear_counter_reload;
 	} else if (triangle.linear_counter > 0) {
 		triangle.linear_counter--;
 	}
 
-	if (!triangle.control_flag) {
+	if (!triangle.lengthcounter.halt) {
 		triangle.linear_counter_reload_flag = false;
 	}
 }
 
-void clock_length_counters() {
-	if (!pulse1.length_counter_halt && pulse1.length_counter > 0) {
-		pulse1.length_counter--;
-	}
+static void clock_length_counters() {
+	clock_length_counter(&pulse1.lengthcounter);
+	clock_length_counter(&pulse2.lengthcounter);
+	clock_length_counter(&triangle.lengthcounter);
+	clock_length_counter(&noise.lengthcounter);
+}
 
-	if (!pulse2.length_counter_halt && pulse2.length_counter > 0) {
-		pulse2.length_counter--;
-	}
-
-	if (!triangle.control_flag && triangle.length_counter > 0) {
-		triangle.length_counter--;
-	}
+static void clock_envelopes() {
+	clock_envelope(&pulse1.envelope, pulse1.lengthcounter.halt);
+	clock_envelope(&pulse2.envelope, pulse2.lengthcounter.halt);
+	clock_envelope(&noise.envelope, noise.lengthcounter.halt);
 }
 
 void apu_tick_triangle() {
@@ -236,13 +316,16 @@ void apu_tick_triangle() {
 void apu_tick(uint16_t scanline) {
 	switch (apu_cycle_counter) {
 		case 3728:
+			clock_envelopes();
 			clock_linear_counters();
 			break;
 		case 7456:
+			clock_envelopes();
 			clock_linear_counters();
 			clock_length_counters();
 			break;
 		case 11185:
+			clock_envelopes();
 			clock_linear_counters();
 			break;
 		case 14914:
@@ -251,6 +334,7 @@ void apu_tick(uint16_t scanline) {
 					frame_interrupt_flag = true;
 					irq6502();
 				}
+				clock_envelopes();
 				clock_linear_counters();
 				clock_length_counters();
 			}
@@ -262,6 +346,7 @@ void apu_tick(uint16_t scanline) {
 			break;
 		case 18640:
 			if (five_step_mode) {
+				clock_envelopes();
 				clock_linear_counters();
 				clock_length_counters();
 			}
@@ -279,27 +364,37 @@ void apu_tick(uint16_t scanline) {
 	if (pulse2_enabled) {
 		pulse_tick(&pulse2);
 	}
+	if (noise_enabled) {
+		noise_tick();
+	}
 
-	int num_enabled = 3;
+	int num_enabled = 4;
 	int16_t frame_sample = 0;
 
 	if (pulse1_enabled) {
-		frame_sample += pulse1.current_output ? 5000 : -5000;
+		frame_sample += (int16_t)(((int)pulse1.current_output * 666) - 5000);
 		//num_enabled++;
 	}
 	if (pulse2_enabled) {
-		frame_sample += pulse2.current_output ? 5000 : -5000;
+		frame_sample += (int16_t)(((int)pulse2.current_output * 666) - 5000);
 		//num_enabled++;
 	}
 	if (triangle_enabled) {
 		frame_sample += (int16_t)(((int)triangle.current_output * 666) - 5000);
 		//num_enabled++;
 	}
-
+	if (noise_enabled) {
+		frame_sample += (int16_t)(((int)noise.current_output * 666) - 5000);
+	}
+	
 	if (num_enabled > 0) {
 		frame_sample /= num_enabled;
 	}
 
 	write_audio_sample(scanline, frame_sample);
 	apu_cycle_counter++;
+}
+
+void apu_reset() {
+	noise_reset();
 }

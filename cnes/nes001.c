@@ -74,9 +74,7 @@ void write6502(uint16_t address, uint8_t value) {
 }
 
 void reset_machine() {
-	cartridge_reset();
-	clockticks6502 = 0;
-	cpu_timer = 0;
+
 	for (size_t i = 0; i < 256 * 240; i++) {
 		framebuffer[i].r <<= 1;
 		framebuffer[i].g <<= 1;
@@ -89,6 +87,12 @@ void reset_machine() {
 	for (size_t i = 0; i < sizeof(cpuram); i++) {
 		cpuram[i] <<= 1;
 	}
+
+	cartridge_reset();
+	apu_reset();
+
+	clockticks6502 = 0;
+	cpu_timer = 0;
 	reset6502();
 }
 
