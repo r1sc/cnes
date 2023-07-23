@@ -277,56 +277,6 @@ static bool triangle_enabled = false;
 static bool noise_enabled = false;
 static bool dmc_enabled = false;
 
-void apu_write(uint16_t address, uint8_t value) {
-	if (address >= 0x4000 && address <= 0x4003) {
-		pulse_write_reg(&pulse1, address & 0b11, value);
-	} else if (address >= 0x4004 && address <= 0x4007) {
-		pulse_write_reg(&pulse2, address & 0b11, value);
-	} else if (address >= 0x4008 && address <= 0x400B) {
-		triangle_write_reg(address & 0b11, value);
-	} else if(address >= 0x400C && address <= 0x400F) {
-		noise_write_reg(address & 0b11, value);
-	} else if (address == 0x4015) {
-		// Status
-		pulse1_enabled = value & 1;
-		pulse2_enabled = value & 2;
-		triangle_enabled = value & 4;
-		noise_enabled = value & 8;
-		dmc_enabled = value & 16;
-
-		if (!pulse1_enabled) pulse1.lengthcounter.value = 0;
-		if (!pulse2_enabled) pulse2.lengthcounter.value = 0;
-		if (!triangle_enabled) triangle.lengthcounter.value = 0;
-		if (!noise_enabled) noise.lengthcounter.value = 0;
-
-	} else if (address == 0x4017) {
-		five_step_mode = value & 0b10000000;
-		interrupt_inhibit = value = 0b01000000;
-		//apu_cycle_counter = 0; // Reset frame counter
-		if (interrupt_inhibit) {
-			frame_interrupt_flag = false;
-		}
-
-	}
-}
-
-uint8_t apu_read(uint16_t address) {
-	if (address == 0x4015) {
-		uint8_t value =
-			(interrupt_inhibit ? 0x80 : 0)
-			| (frame_interrupt_flag ? 0x40 : 0)
-			| (noise.lengthcounter.value > 0 ? 8 : 0)
-			| (triangle.lengthcounter.value > 0 ? 4 : 0)
-			| (pulse2.lengthcounter.value > 0 ? 2 : 0)
-			| (pulse1.lengthcounter.value > 0 ? 1 : 0);
-
-		frame_interrupt_flag = false;
-		return value;
-	}
-
-	return 0;
-}
-
 static void clock_linear_counters() {
 	if (triangle.linear_counter_reload_flag) {
 		triangle.linear_counter = triangle.linear_counter_reload;
@@ -353,6 +303,58 @@ static void clock_envelopes() {
 	clock_envelope(&pulse1.envelope, pulse1.lengthcounter.halt);
 	clock_envelope(&pulse2.envelope, pulse2.lengthcounter.halt);
 	clock_envelope(&noise.envelope, noise.lengthcounter.halt);
+}
+
+void apu_write(uint16_t address, uint8_t value) {
+	if (address >= 0x4000 && address <= 0x4003) {
+		pulse_write_reg(&pulse1, address & 0b11, value);
+	} else if (address >= 0x4004 && address <= 0x4007) {
+		pulse_write_reg(&pulse2, address & 0b11, value);
+	} else if (address >= 0x4008 && address <= 0x400B) {
+		triangle_write_reg(address & 0b11, value);
+	} else if (address >= 0x400C && address <= 0x400F) {
+		noise_write_reg(address & 0b11, value);
+	} else if (address == 0x4015) {
+		// Status
+		pulse1_enabled = value & 1;
+		pulse2_enabled = value & 2;
+		triangle_enabled = value & 4;
+		noise_enabled = value & 8;
+		dmc_enabled = value & 16;
+
+		if (!pulse1_enabled) pulse1.lengthcounter.value = 0;
+		if (!pulse2_enabled) pulse2.lengthcounter.value = 0;
+		if (!triangle_enabled) triangle.lengthcounter.value = 0;
+		if (!noise_enabled) noise.lengthcounter.value = 0;
+
+	} else if (address == 0x4017) {
+		five_step_mode = value & 0b10000000;
+		interrupt_inhibit = value = 0b01000000;
+		//apu_cycle_counter = 0; // Reset frame counter
+		if (interrupt_inhibit) {
+			frame_interrupt_flag = false;
+		}
+		if (five_step_mode) {
+			clock_length_counters_and_sweep_units();
+		}
+	}
+}
+
+uint8_t apu_read(uint16_t address) {
+	if (address == 0x4015) {
+		uint8_t value =
+			(interrupt_inhibit ? 0x80 : 0)
+			| (frame_interrupt_flag ? 0x40 : 0)
+			| (noise.lengthcounter.value > 0 ? 8 : 0)
+			| (triangle.lengthcounter.value > 0 ? 4 : 0)
+			| (pulse2.lengthcounter.value > 0 ? 2 : 0)
+			| (pulse1.lengthcounter.value > 0 ? 1 : 0);
+
+		frame_interrupt_flag = false;
+		return value;
+	}
+
+	return 0;
 }
 
 void apu_tick_triangle() {
@@ -428,11 +430,11 @@ void apu_tick(uint16_t scanline) {
 		//num_enabled++;
 	}
 	if (triangle_enabled) {
-		frame_sample += (int16_t)(((int)triangle.current_output * 666) - 5000);
+		frame_sample += (int16_t)(((int)triangle.current_output * 533) - 4000);
 		//num_enabled++;
 	}
 	if (noise_enabled) {
-		frame_sample += (int16_t)(((int)noise.current_output * 666) - 5000);
+		frame_sample += (int16_t)(((int)noise.current_output * 333) - 2500);
 	}
 	
 	if (num_enabled > 0) {
