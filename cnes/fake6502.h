@@ -1,4 +1,5 @@
-#pragma once
+#ifndef _FAKE6502_H_
+#define _FAKE6502_H_
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -13,3 +14,5 @@ extern size_t total_steps_6502;
 extern size_t clockticks6502;
 extern uint16_t pc;
 extern uint8_t sp, a, x, y, status;
+
+#endif

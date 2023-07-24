@@ -1,4 +1,5 @@
-#pragma once
+#ifndef _CNES_H_
+#define _CNES_H_
 
 typedef struct {
 	uint8_t r;
@@ -14,3 +15,5 @@ void load_ines(char* path);
 void free_ines();
 void reset_machine();
 void tick_frame();
+
+#endif

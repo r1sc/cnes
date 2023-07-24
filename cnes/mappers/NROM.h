@@ -1,9 +1,10 @@
-#pragma once
+#ifndef _NROM_H_
+#define _NROM_H_
 
 #include <assert.h>
 #include <stdint.h>
-#include "bit.h"
 #include "nes001.h"
+#include "bit.h"
 
 static inline uint16_t nrom_ppu_addr_to_ciram_addr(uint16_t ppuaddr) {
 	uint16_t ciram_address = (ppuaddr & 0x3FF) | (((ppuaddr >> ines.ppuaddress_ciram_a10_shift_count) & 1) << 10);
@@ -34,3 +35,5 @@ uint8_t nrom_cpuRead(uint16_t address) {
 void nrom_cpuWrite(uint16_t address, uint8_t value) {
 	// ignore writes to ROM
 }
+
+#endif

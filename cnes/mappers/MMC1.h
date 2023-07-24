@@ -1,8 +1,8 @@
-#pragma once
+#ifndef _MMC1_H_
+#define _MMC1_H_
 
 #include <stdint.h>
 #include <assert.h>
-#include "bit.h"
 #include "nes001.h"
 
 //Control regs
@@ -18,7 +18,7 @@ static uint8_t prg_bank_lo, prg_bank_hi, prg_bank_32;
 
 static uint8_t mirroring = 0;
 
-static uint8_t ram[1024*32]; // 32KB
+static uint8_t ram[1024 * 32]; // 32KB
 
 
 void mmc1_reset() {
@@ -89,8 +89,7 @@ void mmc1_ppuWrite(uint16_t address, uint8_t value) {
 	if (address & BIT_13) {
 		// CIRAM Enabled
 		ciram[ppu_addr_to_ciram_addr(address)] = value;
-	}
-	else if (address < 0x2000 && ines.is_8k_chr_ram) {
+	} else if (address < 0x2000 && ines.is_8k_chr_ram) {
 		ines.chr_rom[address] = value;
 	}
 }
@@ -174,3 +173,5 @@ void mmc1_cpuWrite(uint16_t address, uint8_t value) {
 		}
 	}
 }
+
+#endif

@@ -1,4 +1,5 @@
-#pragma once
+#ifndef _NES001_H_
+#define _NES001_H_
 
 #include <stdint.h>
 
@@ -36,3 +37,5 @@ extern bus_write_t cartridge_ppuWrite;
 uint8_t cpu_ppu_bus_read(uint8_t address);
 void cpu_ppu_bus_write(uint8_t address, uint8_t value);
 void tick_frame();
+
+#endif

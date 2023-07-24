@@ -1,7 +1,7 @@
-#pragma once
+#ifndef _UNROM_H_
+#define _UNROM_H_
 
 #include <stdint.h>
-#include "bit.h"
 #include "nes001.h"
 
 static inline uint16_t unrom_ppu_addr_to_ciram_addr(uint16_t ppuaddr) {
@@ -9,7 +9,7 @@ static inline uint16_t unrom_ppu_addr_to_ciram_addr(uint16_t ppuaddr) {
 	return ciram_address;
 }
 
-uint8_t selected_bank = 0;
+static uint8_t selected_bank = 0;
 
 void unrom_reset() {
 	selected_bank = 0;
@@ -46,3 +46,5 @@ void unrom_cpuWrite(uint16_t address, uint8_t value) {
 		selected_bank = value & 0x0F;
 	}
 }
+
+#endif

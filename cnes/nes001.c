@@ -7,7 +7,6 @@
 #include "include/cnes.h"
 #include "apu.h"
 #include "ppu.h"
-#include "bit.h"
 #include "fake6502.h"
 #include "mappers/NROM.h"
 #include "mappers/UNROM.h"
