@@ -6,6 +6,7 @@
 
 #include "include/cnes.h"
 #include "apu.h"
+#include "ppu.h"
 #include "bit.h"
 #include "fake6502.h"
 #include "mappers/NROM.h"
@@ -88,8 +89,9 @@ void reset_machine() {
 		cpuram[i] <<= 1;
 	}
 
-	cartridge_reset();
 	apu_reset();
+	ppu_reset();
+	cartridge_reset();
 
 	clockticks6502 = 0;
 	cpu_timer = 0;

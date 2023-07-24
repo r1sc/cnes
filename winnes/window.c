@@ -75,7 +75,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 					reset_machine();
 					break;
 				case COMMAND_ABOUT:
-					MessageBox(hwnd, "WinNES 0.1 by r1sc 2023\n\nSupported mappers:\nNROM\nUNROM", "About WinNES", MB_ICONINFORMATION);
+					MessageBox(hwnd, "WinNES 0.1 by r1sc 2023\n\nSupported mappers:\nNROM\nUNROM\nMMC1", "About WinNES", MB_ICONINFORMATION);
 					break;
 				case COMMAND_SAVE_STATE:
 					//save_state();

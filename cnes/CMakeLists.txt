@@ -8,7 +8,7 @@ add_library (cnes STATIC
 	"disasm.c" 
 	"nes001.c" 
 	"apu.c" 
-)
+ "ppu.h")
 
 if(MSVC)
   target_compile_options(cnes PUBLIC "/ZI")
