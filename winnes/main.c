@@ -16,6 +16,8 @@ bool running = true;
 static HGLRC ourOpenGLRenderingContext;
 extern void poll_joystick(uint8_t joystick_id);
 
+bool joystick_enabled = false;
+
 GLuint load_shader(const char* shader_src, GLenum kind) {
 
 	const GLchar* strings[] = {
@@ -95,7 +97,7 @@ static int last_scanline = -2; // Start out of range
 
 void write_audio_sample(int scanline, int16_t sample) {
 	// Super crude 1 pole IIR filter
-	sample_out += ((sample - sample_out) >> 6);	
+	sample_out += ((sample - sample_out) >> 6);
 
 	if (scanline == last_scanline) return;
 	last_scanline = scanline;
@@ -113,7 +115,6 @@ void write_audio_sample(int scanline, int16_t sample) {
 		}
 	}
 }
-
 
 static HDC window_dc;
 
@@ -216,59 +217,63 @@ DWORD WINAPI render_thread(void* param) {
 	glEnableVertexAttribArray(1);
 	glVertexAttribPointer(1, 2, GL_INT, false, 4 * 4, (GLvoid*)8);
 
-	double last = (double)GetTickCount64();
-	double  now = last;
-	double  accum = 0;
-	double  dt = 1000.0 / 60.0;
+	LARGE_INTEGER frequency;
+	QueryPerformanceFrequency(&frequency);
+
+	LARGE_INTEGER last;
+	LARGE_INTEGER now;
+	LONGLONG accum = 0;
+	LONGLONG dt_cps = frequency.QuadPart / 60;
+	LONGLONG one_second_cps = frequency.QuadPart;
+	LONGLONG one_ms_cps = frequency.QuadPart / 1000;
+	LONGLONG secondacc = 0;
 
 	int frame_counter = 0;
 	int fps = 0;
-	double secondacc = 0;
 	int num_frames = 0;
 
 	waveout_initialize(SAMPLE_RATE, BUFFER_LEN);
 
+	timeBeginPeriod(1);
+
+
+	QueryPerformanceCounter(&last);
+	QueryPerformanceCounter(&now);
+
 	while (running) {
-		now = (double)GetTickCount64();
-		double delta = now - last;
-		if (delta > 1000) {
-			delta = dt;
+		QueryPerformanceCounter(&now);
+		LONGLONG delta = now.QuadPart - last.QuadPart;
+		if (delta >= one_second_cps) {
+			delta = dt_cps;
 		}
+
 		last = now;
 		accum += delta;
 		secondacc += delta;
 
-		if (secondacc >= 1000) {
+		if (secondacc >= one_second_cps) {
 			fps = frame_counter;
 			char title[128];
 			sprintf(title, "WinNES - (%d fps = %d frames / sec)\0", fps, num_frames);
 			SetWindowText(hwnd, title);
 			frame_counter = 0;
 			num_frames = 0;
-			secondacc -= 1000;
+			secondacc -= one_second_cps;
 		}
 
-		bool needs_rerender = false;
-		if (accum >= dt) {
+		if (accum >= dt_cps) {
 			//poll_joystick(0);
-			needs_rerender = true;
 
-
-			while (accum >= dt) {
+			while (accum >= dt_cps) {
 				tick_frame();
 				num_frames++;
-				accum -= dt;
+				accum -= dt_cps;
 			}
-		} else {
-			Sleep(1);
-		}
-
-		if (needs_rerender) {
+	
 			frame_counter++;
 			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 240, GL_RGB, GL_UNSIGNED_BYTE, framebuffer);
 			glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, NULL);
 			SwapBuffers(window_dc);
-			glFinish();
 
 
 			if (needs_resize) {
@@ -280,8 +285,14 @@ DWORD WINAPI render_thread(void* param) {
 
 				needs_resize = false;
 			}
+		} else {
+			Sleep(1);
 		}
+		
+
 	}
+
+	timeEndPeriod(1);
 
 	wglMakeCurrent(NULL, NULL);
 	wglDeleteContext(ourOpenGLRenderingContext);
@@ -297,7 +308,7 @@ int APIENTRY WinMain(
 	LPSTR     lpCmdLine,
 	int       nShowCmd
 ) {
-	load_ines("roms/bubble.nes");
+	load_ines("roms/zelda.nes");
 	create_window();
 
 	HANDLE threadId = CreateThread(NULL, 0, render_thread, NULL, 0, NULL);

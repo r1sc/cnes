@@ -11,8 +11,6 @@ static struct OAMEntry_t {
 	uint8_t x;
 } OAM[64];
 
-static uint8_t* oamptr = (uint8_t*)OAM;
-
 union {
 	struct {
 		unsigned int nametable_address : 2;
@@ -85,11 +83,7 @@ static uint8_t fine_x_scroll;
 
 
 void ppu_internal_bus_write(uint16_t address, uint8_t value) {
-	if (address == 0x3f10 || address == 0x3f14 || address == 0x3f18 || address == 0x3f1c) {
-		palette[address & 0xF] = value;
-	} else if (address == 0x3f04 || address == 0x3f08 || address == 0x3f0C) {
-		palette[address & 0x1F] = value;
-	} else if (address >= 0x3F00 && address <= 0x3FFF) {
+	if (address >= 0x3F00 && address <= 0x3FFF) {
 		// Palette control
 		uint8_t index = address & 0xF;
 		palette[index == 0 ? 0 : (address & 0x1F)] = value;
@@ -99,11 +93,7 @@ void ppu_internal_bus_write(uint16_t address, uint8_t value) {
 }
 
 uint8_t ppu_internal_bus_read(uint16_t address) {
-	if (address == 0x3f10 || address == 0x3f14 || address == 0x3f18 || address == 0x3f1c) {
-		return palette[address & 0xF];
-	} else if (address == 0x3f04 || address == 0x3f08 || address == 0x3f0C) {
-		return palette[address & 0x1F];
-	} else if (address >= 0x3F00 && address <= 0x3FFF) {
+	if (address >= 0x3F00 && address <= 0x3FFF) {
 		// Palette control
 		uint8_t index = address & 0x3;
 		return palette[index == 0 ? 0 : (address & 0x1F)];
@@ -124,7 +114,7 @@ uint8_t cpu_ppu_bus_read(uint8_t address) {
 			PPUADDR_LATCH = false;
 			break;
 		case 4:
-			value = oamptr[OAMADDR];
+			value = ((uint8_t*)OAM)[OAMADDR];
 			break;
 		case 7:
 			value = ppudata_buffer;
@@ -155,7 +145,7 @@ void cpu_ppu_bus_write(uint8_t address, uint8_t value) {
 			OAMADDR = value;
 			break;
 		case 4:
-			oamptr[OAMADDR++] = value;
+			((uint8_t*)OAM)[OAMADDR++] = value;
 			break;
 		case 5:
 			if (PPUADDR_LATCH) {
@@ -485,7 +475,7 @@ void tick_frame() {
 						}
 					}
 
-					uint16_t output_palette_location = 0x00;
+					uint16_t output_palette_location = 0x3f00;
 					uint8_t output_pixel = bg_pixel;
 					uint8_t output_palette = bg_palette;
 
@@ -493,18 +483,18 @@ void tick_frame() {
 						if (bg_pixel == 0 && sprite_pixel != 0) {
 							output_pixel = sprite_pixel;
 							output_palette = sprite_palette;
-							output_palette_location = 0x10;
+							output_palette_location = 0x3f10;
 						} else if (sprite_pixel != 0 && bg_pixel != 0) {
 							if (((temp_oam[first_found].attributes >> 5) & 1) == 0) {
 								output_pixel = sprite_pixel;
 								output_palette = sprite_palette;
-								output_palette_location = 0x10;
+								output_palette_location = 0x3f10;
 							}
 						}
 					}
 
-					//uint8_t palette_index = ppu_internal_bus_read((uint16_t)(output_palette_location | output_palette | output_pixel)) & 0x3f;
-					uint8_t palette_index = palette[output_palette_location | output_palette | output_pixel] & 0x3f; 
+					uint8_t palette_index = ppu_internal_bus_read((uint16_t)(output_palette_location | output_palette | output_pixel)) & 0x3f;
+					//uint8_t palette_index = palette[output_palette_location | output_palette | output_pixel] & 0x3f; 
 					pixformat_t* pixel = &framebuffer[(size_t)256 * scanline + (dot - 1)];
 					pixel->r = palette_colors[palette_index * 3 + 0];
 					pixel->g = palette_colors[palette_index * 3 + 1];

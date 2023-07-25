@@ -21,8 +21,7 @@ unsigned int new_height;
 #define COMMAND_ABOUT 3
 #define COMMAND_SAVE_STATE 4
 #define COMMAND_RESTORE_STATE 5
-
-static HMENU emuMenu;
+#define COMMAND_TOGGLE_JOY 6
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
 	switch (message) {
@@ -34,7 +33,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 			AppendMenu(menu, MF_STRING | MF_POPUP, (UINT_PTR)fileMenu, "File");
 			AppendMenu(fileMenu, MF_STRING, COMMAND_OPEN, "&Open...");
 
-			emuMenu = CreateMenu();
+			HMENU optionsMenu = CreateMenu();
+			AppendMenu(menu, MF_STRING | MF_POPUP, (UINT_PTR)optionsMenu, "Options");
+			AppendMenu(optionsMenu, MF_STRING | MF_CHECKED, COMMAND_TOGGLE_JOY, "Joystick");
+
+			HMENU emuMenu = CreateMenu();
 			AppendMenu(menu, MF_STRING | MF_POPUP, (UINT_PTR)emuMenu, "Emulation");
 			AppendMenu(emuMenu, MF_STRING, COMMAND_RESET, "Reset");
 			AppendMenu(emuMenu, MF_STRING, COMMAND_SAVE_STATE, "Save state");
@@ -82,6 +85,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 					break;
 				case COMMAND_RESTORE_STATE:
 					//restore_state();
+					break;
+				case COMMAND_TOGGLE_JOY:
+
 					break;
 			}
 		}
