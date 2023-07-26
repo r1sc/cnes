@@ -217,6 +217,8 @@ DWORD WINAPI render_thread(void* param) {
 	glEnableVertexAttribArray(1);
 	glVertexAttribPointer(1, 2, GL_INT, false, 4 * 4, (GLvoid*)8);
 
+	timeBeginPeriod(1);
+
 	LARGE_INTEGER frequency;
 	QueryPerformanceFrequency(&frequency);
 
@@ -229,12 +231,9 @@ DWORD WINAPI render_thread(void* param) {
 	LONGLONG secondacc = 0;
 
 	int frame_counter = 0;
-	int fps = 0;
 	int num_frames = 0;
 
 	waveout_initialize(SAMPLE_RATE, BUFFER_LEN);
-
-	timeBeginPeriod(1);
 
 
 	QueryPerformanceCounter(&last);
@@ -243,16 +242,16 @@ DWORD WINAPI render_thread(void* param) {
 	while (running) {
 		QueryPerformanceCounter(&now);
 		LONGLONG delta = now.QuadPart - last.QuadPart;
+		last = now;
+
 		if (delta >= one_second_cps) {
 			delta = dt_cps;
 		}
-
-		last = now;
 		accum += delta;
 		secondacc += delta;
 
 		if (secondacc >= one_second_cps) {
-			fps = frame_counter;
+			int fps = frame_counter;
 			char title[128];
 			sprintf(title, "WinNES - (%d fps = %d frames / sec)\0", fps, num_frames);
 			SetWindowText(hwnd, title);
@@ -274,8 +273,7 @@ DWORD WINAPI render_thread(void* param) {
 			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 240, GL_RGB, GL_UNSIGNED_BYTE, framebuffer);
 			glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, NULL);
 			SwapBuffers(window_dc);
-
-
+			
 			if (needs_resize) {
 				glViewport(new_width / 2 - new_size / 2, new_height / 2 - new_size / 2, new_size, new_size);
 				glClear(GL_COLOR_BUFFER_BIT);
@@ -285,10 +283,9 @@ DWORD WINAPI render_thread(void* param) {
 
 				needs_resize = false;
 			}
-		} else {
-			Sleep(1);
 		}
-		
+
+		Sleep(1);	
 
 	}
 
@@ -308,7 +305,7 @@ int APIENTRY WinMain(
 	LPSTR     lpCmdLine,
 	int       nShowCmd
 ) {
-	load_ines("roms/zelda.nes");
+	load_ines("roms/megaman.nes");
 	create_window();
 
 	HANDLE threadId = CreateThread(NULL, 0, render_thread, NULL, 0, NULL);
