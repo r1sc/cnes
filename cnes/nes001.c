@@ -1,6 +1,5 @@
 #include <stdint.h>
 #include <stdbool.h>
-#include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
@@ -21,9 +20,9 @@ bus_write_t cartridge_cpuWrite;
 bus_read_t cartridge_ppuRead;
 bus_write_t cartridge_ppuWrite;
 
-uint8_t ciram[2048];
-uint8_t cpuram[2048];
-uint8_t controller_status[2] = { 0, 0 };
+static uint8_t ciram[2048];
+static uint8_t cpuram[2048];
+static uint8_t controller_status[2] = { 0, 0 };
 
 uint8_t read6502(uint16_t address) {
 	if (address == 0x4016 || address == 0x4017) {
@@ -46,7 +45,6 @@ uint8_t read6502(uint16_t address) {
 	}
 }
 
-extern size_t cpu_timer;
 
 void write6502(uint16_t address, uint8_t value) {
 	if (address == 0x4014) {
@@ -74,7 +72,6 @@ void write6502(uint16_t address, uint8_t value) {
 }
 
 void reset_machine() {
-
 	for (size_t i = 0; i < 256 * 240; i++) {
 		framebuffer[i].r <<= 1;
 		framebuffer[i].g <<= 1;
@@ -106,48 +103,43 @@ typedef struct {
 	char padding[5];
 } ines_header_t;
 
-void read_ines(const char* path) {
-	FILE* f = fopen(path, "rb");
+void read_ines(const char* data) {
+	ines_header_t* header = (ines_header_t*)data;
 
-	ines_header_t header;
-	fread(&header, sizeof(ines_header_t), 1, f);
-
-	char* diskdude = (char*)&header.flags[1];
+	char* diskdude = (char*)&header->flags[1];
 	if (strncmp(diskdude, "DiskDude!", 9) == 0) {
-		ines.mapper_number = header.flags[0] >> 4;
+		ines.mapper_number = header->flags[0] >> 4;
 	} else {
-		ines.mapper_number = (header.flags[0] >> 4) | (header.flags[1] & 0xF0);
+		ines.mapper_number = (header->flags[0] >> 4) | (header->flags[1] & 0xF0);
 	}
 
 	uint8_t nFileType = 1;
-	if ((header.flags[2] & 0x0C) == 0x08) nFileType = 2;
+	if ((header->flags[2] & 0x0C) == 0x08) nFileType = 2;
 
-	uint8_t a10 = header.flags[0] & 1;
+	uint8_t a10 = header->flags[0] & 1;
 	ines.ppuaddress_ciram_a10_shift_count = (a10 == 0) ? 11 : 10;
 
-	bool has_trainer = (header.flags[0] & 4) == 4;
-	if (has_trainer) fseek(f, 512, SEEK_CUR);
+	size_t data_offset = sizeof(ines_header_t);
+	bool has_trainer = (header->flags[0] & 4) == 4;
+	if (has_trainer) data_offset += 512;
 
-	ines.prg_rom_size_16k_chunks = header.prg_rom_16k_chunks;
-	ines.prg_rom = (uint8_t*)malloc((size_t)header.prg_rom_16k_chunks * 16384);
+	ines.prg_rom_size_16k_chunks = header->prg_rom_16k_chunks;
+	ines.prg_rom = (uint8_t*)(data + data_offset);
 	if (!ines.prg_rom) exit(1);
 
-	fread(ines.prg_rom, 16384, header.prg_rom_16k_chunks, f);
+	data_offset += 16384 * (size_t)header->prg_rom_16k_chunks;	
 
-	ines.chr_rom_size_8k_chunks = header.chr_rom_8k_chunks;
-	ines.is_8k_chr_ram = header.chr_rom_8k_chunks == 0;
+	ines.chr_rom_size_8k_chunks = header->chr_rom_8k_chunks;
+	ines.is_8k_chr_ram = header->chr_rom_8k_chunks == 0;
 	if (ines.is_8k_chr_ram) {
 		ines.chr_rom_size_8k_chunks = 1;
 	}
 
-	ines.chr_rom = malloc((size_t)ines.chr_rom_size_8k_chunks * 8192);
-	if (!ines.chr_rom) exit(1);
+	ines.chr_rom = (uint8_t*)(data + data_offset);
 
-	if (!ines.is_8k_chr_ram) {
-		fread(ines.chr_rom, 8192, ines.chr_rom_size_8k_chunks, f);
+	if (ines.is_8k_chr_ram) {
+		ines.chr_rom = malloc((size_t)ines.chr_rom_size_8k_chunks * 8192);
 	}
-
-	fclose(f);
 
 	rom_loaded = true;
 }
@@ -155,17 +147,18 @@ void read_ines(const char* path) {
 void free_ines() {
 	if (rom_loaded) {
 		rom_loaded = false;
-		free(ines.chr_rom);
-		free(ines.prg_rom);
+		if (ines.is_8k_chr_ram) {
+			free(ines.chr_rom);
+		}
 	}
 }
 
-void load_ines(char* path) {
+int load_ines(const char* data) {
 	if (rom_loaded) {
 		free_ines();
 	}
 
-	read_ines(path);
+	read_ines(data);
 
 	if (ines.mapper_number == 0) {
 		cartridge_reset = nrom_reset;
@@ -185,7 +178,12 @@ void load_ines(char* path) {
 		cartridge_cpuWrite = unrom_cpuWrite;
 		cartridge_ppuRead = unrom_ppuRead;
 		cartridge_ppuWrite = unrom_ppuWrite;
+	} else {
+		free_ines();
+		return 1;
 	}
 
 	reset_machine();
+
+	return 0;
 }

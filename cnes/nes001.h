@@ -19,8 +19,6 @@ typedef struct {
 
 extern ines_t ines;
 extern bool rom_loaded;
-extern int scanline;
-extern int dot;
 
 extern uint8_t ciram[2048];
 

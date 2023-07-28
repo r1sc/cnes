@@ -13,11 +13,6 @@ add_executable (winnes WIN32
 "winnes.rc"
 )
 
- set_source_files_properties(winres.rc PROPERTIES LANGUAGE RC)
-
-if(MSVC)
-  target_compile_options(winnes PUBLIC "/ZI")
-  target_link_options(winnes PUBLIC "/INCREMENTAL")
-endif()
+set_source_files_properties(winres.rc PROPERTIES LANGUAGE RC)
 
 target_link_libraries(winnes cnes opengl32.lib winmm.lib)

@@ -23,6 +23,8 @@ unsigned int new_height;
 #define COMMAND_RESTORE_STATE 5
 #define COMMAND_TOGGLE_JOY 6
 
+extern void load_ines_from_file(const char* path);
+
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
 	switch (message) {
 		case WM_CREATE:
@@ -69,7 +71,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 					openFile.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
 					openFile.nMaxFile = sizeof(szFile);
 					if (GetOpenFileName(&openFile)) {
-						load_ines(szFile);
+						load_ines_from_file(szFile);
 						//EnableMenuItem(emuMenu, COMMAND_RESTORE_STATE, has_save_state ? MF_ENABLED : MF_GRAYED);
 					}
 				}

@@ -299,13 +299,43 @@ DWORD WINAPI render_thread(void* param) {
 	return 0;
 }
 
+char* loaded_data = NULL;
+
+void load_ines_from_file(const char* path) {
+	if (loaded_data != NULL) {
+		free(loaded_data);
+	}
+	FILE* f = fopen(path, "rb");
+	fseek(f, 0, SEEK_END);
+	long size = ftell(f);
+	fseek(f, 0, SEEK_SET);
+	
+	loaded_data = malloc((size_t)size);
+	if (!loaded_data) exit(1);
+
+	fread(loaded_data, size, 1, f);
+
+	fclose(f);
+	
+
+	load_ines(loaded_data);
+}
+
+void free_ines_file() {
+	free_ines();
+	if (loaded_data) {
+		free(loaded_data);
+	}
+}
+
 int APIENTRY WinMain(
 	HINSTANCE hInstance,
 	HINSTANCE hPrevInstance,
 	LPSTR     lpCmdLine,
 	int       nShowCmd
 ) {
-	load_ines("roms/megaman.nes");
+	
+	load_ines_from_file("roms/megaman2.nes");
 	create_window();
 
 	HANDLE threadId = CreateThread(NULL, 0, render_thread, NULL, 0, NULL);
@@ -329,7 +359,7 @@ int APIENTRY WinMain(
 
 	WaitForSingleObject(threadId, INFINITE);
 
-	free_ines();
+	free_ines_file();
 
 	return 0;
 }
