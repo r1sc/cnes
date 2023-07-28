@@ -8,6 +8,6 @@ add_library (cnes STATIC
 	"disasm.c" 
 	"nes001.c" 
 	"apu.c" 
- "ppu.h")
+ "ppu.h" "mappers/MMC1.c" "mappers/NROM.c" "mappers/UNROM.c" "stream.h")
 
 target_include_directories(cnes PUBLIC include)

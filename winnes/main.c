@@ -300,16 +300,52 @@ DWORD WINAPI render_thread(void* param) {
 }
 
 char* loaded_data = NULL;
+char loaded_path[256] = { 0 };
+
+void main_reset() {
+	reset_machine();
+}
+
+void main_load_state() {
+	if (loaded_data == NULL) return;
+
+	char state_path[256];
+	sprintf(state_path, "%s.sav", loaded_path);
+
+	FILE* f = fopen(state_path, "rb");
+	load_state((void*)f, fread);
+	fclose(f);
+}
+
+void main_save_state() {
+	if (loaded_data == NULL) return;
+
+	char state_path[256];
+	sprintf(state_path, "%s.sav", loaded_path);
+
+	FILE* f = fopen(state_path, "wb");
+	save_state((void*)f, fwrite);
+	fclose(f);
+}
+
+void free_ines_file() {
+	free_ines();
+	if (loaded_data) {
+		free(loaded_data);
+		loaded_data = NULL;
+	}
+}
 
 void load_ines_from_file(const char* path) {
-	if (loaded_data != NULL) {
-		free(loaded_data);
-	}
+	strcpy(loaded_path, path);
+
+	free_ines_file();
+
 	FILE* f = fopen(path, "rb");
 	fseek(f, 0, SEEK_END);
 	long size = ftell(f);
 	fseek(f, 0, SEEK_SET);
-	
+
 	loaded_data = malloc((size_t)size);
 	if (!loaded_data) exit(1);
 
@@ -317,15 +353,7 @@ void load_ines_from_file(const char* path) {
 
 	fclose(f);
 	
-
 	load_ines(loaded_data);
-}
-
-void free_ines_file() {
-	free_ines();
-	if (loaded_data) {
-		free(loaded_data);
-	}
 }
 
 int APIENTRY WinMain(

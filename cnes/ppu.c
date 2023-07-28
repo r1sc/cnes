@@ -1,4 +1,6 @@
 #include <stdbool.h>
+#include "ppu.h"
+
 #include "nes001.h"
 #include "apu.h"
 #include "fake6502.h"
@@ -53,16 +55,6 @@ static union {
 	uint8_t value;
 } PPUSTATUS = { 0 };
 
-typedef union {
-	struct {
-		unsigned int coarse_x_scroll : 5;
-		unsigned int coarse_y_scroll : 5;
-		unsigned int horizontal_nametable : 1;
-		unsigned int vertical_nametable : 1;
-		unsigned int fine_y_scroll : 3;
-	};
-	uint16_t value : 15;
-} VRAM_Address_t;
 
 typedef union {
 	struct {
@@ -91,25 +83,21 @@ static const uint8_t palette_colors[192] =
 	0xAE, 0xB4, 0xE5, 0xC7, 0xB5, 0xDF, 0xE4, 0xA9, 0xA9, 0xA9, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 };
 
-// Serializable data
-static uint8_t palette[32];
-static VRAM_Address_t T, V;
-static uint8_t fine_x_scroll;
-static uint8_t ppudata_buffer = 0;
+ppu_state_t PPU_state = { 0 };
 
 void ppu_reset() {
 	for (size_t i = 0; i < 32; i++) {
-		palette[i] = 0;
+		PPU_state.palette[i] = 0;
 	}
 	PPUCTRL.value = 0;
 	PPUMASK.value = 0;
 	PPUSTATUS.value = 0;
 	OAMADDR = 0;
 	PPUADDR_LATCH = false;
-	fine_x_scroll = 0;
-	V.value = 0;
-	T.value = 0;
-	ppudata_buffer = 0;
+	PPU_state.fine_x_scroll = 0;
+	PPU_state.V.value = 0;
+	PPU_state.T.value = 0;
+	PPU_state.ppudata_buffer = 0;
 }
 
 // Frame "local" data
@@ -134,7 +122,7 @@ static inline void ppu_internal_bus_write(uint16_t address, uint8_t value) {
 	if (address >= 0x3F00 && address <= 0x3FFF) {
 		// Palette control
 		uint8_t index = address & 0xF;
-		palette[index == 0 ? 0 : (address & 0x1F)] = value;
+		PPU_state.palette[index == 0 ? 0 : (address & 0x1F)] = value;
 	} else {
 		cartridge_ppuWrite(address, value);
 	}
@@ -144,7 +132,7 @@ static inline uint8_t ppu_internal_bus_read(uint16_t address) {
 	if (address >= 0x3F00 && address <= 0x3FFF) {
 		// Palette control
 		uint8_t index = address & 0x3;
-		return palette[index == 0 ? 0 : (address & 0x1F)];
+		return PPU_state.palette[index == 0 ? 0 : (address & 0x1F)];
 	} else {
 		return cartridge_ppuRead(address);
 	}
@@ -164,14 +152,14 @@ uint8_t cpu_ppu_bus_read(uint8_t address) {
 			value = ((uint8_t*)OAM)[OAMADDR];
 			break;
 		case 7:
-			value = ppudata_buffer;
-			ppudata_buffer = ppu_internal_bus_read(V.value);
+			value = PPU_state.ppudata_buffer;
+			PPU_state.ppudata_buffer = ppu_internal_bus_read(PPU_state.V.value);
 
-			if (V.value >= 0x3f00 && V.value <= 0x3fff) {
-				value = ppudata_buffer; // Do not delay palette reads
+			if (PPU_state.V.value >= 0x3f00 && PPU_state.V.value <= 0x3fff) {
+				value = PPU_state.ppudata_buffer; // Do not delay palette reads
 			}
 
-			V.value += (PPUCTRL.vram_address_increment ? 32 : 1);
+			PPU_state.V.value += (PPUCTRL.vram_address_increment ? 32 : 1);
 			break;
 	}
 
@@ -182,8 +170,8 @@ void cpu_ppu_bus_write(uint8_t address, uint8_t value) {
 	switch (address) {
 		case 0:
 			PPUCTRL.value = value;
-			T.horizontal_nametable = value & 1;
-			T.vertical_nametable = (value >> 1) & 1;
+			PPU_state.T.horizontal_nametable = value & 1;
+			PPU_state.T.vertical_nametable = (value >> 1) & 1;
 			break;
 		case 1:
 			PPUMASK.value = value;
@@ -196,44 +184,44 @@ void cpu_ppu_bus_write(uint8_t address, uint8_t value) {
 			break;
 		case 5:
 			if (PPUADDR_LATCH) {
-				T.coarse_y_scroll = (value >> 3) & 0b11111;
-				T.fine_y_scroll = value & 0b111;
+				PPU_state.T.coarse_y_scroll = (value >> 3) & 0b11111;
+				PPU_state.T.fine_y_scroll = value & 0b111;
 			} else {
-				T.coarse_x_scroll = (value >> 3) & 0b11111;
-				fine_x_scroll = value & 0b111;
+				PPU_state.T.coarse_x_scroll = (value >> 3) & 0b11111;
+				PPU_state.fine_x_scroll = value & 0b111;
 			}
 			PPUADDR_LATCH = !PPUADDR_LATCH;
 			break;
 		case 6:
 			if (PPUADDR_LATCH) {
-				T.value = (T.value & 0xFF00) | value;
-				V.value = T.value;
+				PPU_state.T.value = (PPU_state.T.value & 0xFF00) | value;
+				PPU_state.V.value = PPU_state.T.value;
 			} else {
-				T.value = ((((uint16_t)value & 0x7F) << 8) | (T.value & 0xFF)) & 0x7FFF;
+				PPU_state.T.value = ((((uint16_t)value & 0x7F) << 8) | (PPU_state.T.value & 0xFF)) & 0x7FFF;
 			}
 			PPUADDR_LATCH = !PPUADDR_LATCH;
 			break;
 		case 7:
-			ppu_internal_bus_write(V.value, value);
-			V.value += (PPUCTRL.vram_address_increment ? 32 : 1);
+			ppu_internal_bus_write(PPU_state.V.value, value);
+			PPU_state.V.value += (PPUCTRL.vram_address_increment ? 32 : 1);
 			break;
 	}
 }
 
 
 inline void nametable_fetch() {
-	next_tile = cartridge_ppuRead(0x2000 | (V.value & 0x0FFF));
+	next_tile = cartridge_ppuRead(0x2000 | (PPU_state.V.value & 0x0FFF));
 }
 
 inline void attribute_fetch() {
-	next_attribute = cartridge_ppuRead(0x23C0 | (V.value & 0x0C00) | ((V.value >> 4) & 0x38) | ((V.value >> 2) & 0x07));
-	if (V.coarse_y_scroll & 2) next_attribute >>= 4;
-	if (V.coarse_x_scroll & 2) next_attribute >>= 2;
+	next_attribute = cartridge_ppuRead(0x23C0 | (PPU_state.V.value & 0x0C00) | ((PPU_state.V.value >> 4) & 0x38) | ((PPU_state.V.value >> 2) & 0x07));
+	if (PPU_state.V.coarse_y_scroll & 2) next_attribute >>= 4;
+	if (PPU_state.V.coarse_x_scroll & 2) next_attribute >>= 2;
 	next_attribute &= 0b11;
 }
 
 inline void bg_lsb_fetch() {
-	nametable_address.fine_y_offset = V.fine_y_scroll;
+	nametable_address.fine_y_offset = PPU_state.V.fine_y_scroll;
 	nametable_address.bit_plane = 0;
 	nametable_address.tile_lo = next_tile & 0xF;
 	nametable_address.tile_hi = (next_tile >> 4) & 0xF;
@@ -250,11 +238,11 @@ void inc_horiz() {
 	if (!PPUMASK.show_background)
 		return;
 
-	if (V.coarse_x_scroll == 31) {
-		V.coarse_x_scroll = 0;
-		V.horizontal_nametable = ~V.horizontal_nametable;
+	if (PPU_state.V.coarse_x_scroll == 31) {
+		PPU_state.V.coarse_x_scroll = 0;
+		PPU_state.V.horizontal_nametable = ~PPU_state.V.horizontal_nametable;
 	} else {
-		V.coarse_x_scroll++;
+		PPU_state.V.coarse_x_scroll++;
 	}
 }
 
@@ -262,17 +250,17 @@ void inc_vert() {
 	if (!PPUMASK.show_background)
 		return;
 
-	if (V.fine_y_scroll < 7) {
-		V.fine_y_scroll++;
+	if (PPU_state.V.fine_y_scroll < 7) {
+		PPU_state.V.fine_y_scroll++;
 	} else {
-		V.fine_y_scroll = 0;
-		if (V.coarse_y_scroll == 29) {
-			V.coarse_y_scroll = 0;
-			V.vertical_nametable = ~V.vertical_nametable;
-		} else if (V.coarse_y_scroll == 31) {
-			V.coarse_y_scroll = 0;
+		PPU_state.V.fine_y_scroll = 0;
+		if (PPU_state.V.coarse_y_scroll == 29) {
+			PPU_state.V.coarse_y_scroll = 0;
+			PPU_state.V.vertical_nametable = ~PPU_state.V.vertical_nametable;
+		} else if (PPU_state.V.coarse_y_scroll == 31) {
+			PPU_state.V.coarse_y_scroll = 0;
 		} else {
-			V.coarse_y_scroll++;
+			PPU_state.V.coarse_y_scroll++;
 		}
 	}
 }
@@ -351,8 +339,8 @@ void tick_frame() {
 					load_shifters();
 
 					if (PPUMASK.show_background || PPUMASK.show_sprites) {
-						V.horizontal_nametable = T.horizontal_nametable;
-						V.coarse_x_scroll = T.coarse_x_scroll;
+						PPU_state.V.horizontal_nametable = PPU_state.T.horizontal_nametable;
+						PPU_state.V.coarse_x_scroll = PPU_state.T.coarse_x_scroll;
 					}
 
 					if (PPUMASK.show_sprites) {
@@ -392,7 +380,7 @@ void tick_frame() {
 							if (PPUCTRL.sprite_size) {
 								// Tall sprites
 
-								bool flipped_y = (temp_oam[i].attributes & 0x80) != 0;								
+								bool flipped_y = (temp_oam[i].attributes & 0x80) != 0;
 								int y_offset = scanline - (int)temp_oam[i].y;
 
 								if (flipped_y) {
@@ -422,7 +410,7 @@ void tick_frame() {
 								nametable_address.bit_plane = 0;
 								nametable_address.tile_lo = temp_oam[i].tile_index & 0xF;
 								nametable_address.tile_hi = (temp_oam[i].tile_index >> 4) & 0xF;
-								nametable_address.pattern_table_half = PPUCTRL.sprite_pattern_table_address;								
+								nametable_address.pattern_table_half = PPUCTRL.sprite_pattern_table_address;
 							}
 
 							sprite_lsb[i] = cartridge_ppuRead(nametable_address.value);
@@ -433,9 +421,9 @@ void tick_frame() {
 				}
 
 				if (PPUMASK.show_background && scanline == -1 && dot >= 280 && dot <= 304) {
-					V.coarse_y_scroll = T.coarse_y_scroll;
-					V.fine_y_scroll = T.fine_y_scroll;
-					V.vertical_nametable = T.vertical_nametable;
+					PPU_state.V.coarse_y_scroll = PPU_state.T.coarse_y_scroll;
+					PPU_state.V.fine_y_scroll = PPU_state.T.fine_y_scroll;
+					PPU_state.V.vertical_nametable = PPU_state.T.vertical_nametable;
 				}
 
 				if (scanline >= 0 && dot >= 1 && dot <= 256) {
@@ -443,7 +431,7 @@ void tick_frame() {
 					uint8_t bg_palette = 0;
 
 					if (PPUMASK.show_background) {
-						uint16_t bit = 0x8000 >> fine_x_scroll;
+						uint16_t bit = 0x8000 >> PPU_state.fine_x_scroll;
 
 						uint8_t lo_bit = (pattern_plane_0 & bit) ? 1 : 0;
 						uint8_t hi_bit = (pattern_plane_1 & bit) ? 1 : 0;
@@ -511,7 +499,7 @@ void tick_frame() {
 
 					//uint8_t palette_index = ppu_internal_bus_read((uint16_t)(output_palette_location | output_palette | output_pixel)) & 0x3f;
 					uint16_t palette_addr = output_palette_location | output_palette | output_pixel;
-					uint8_t palette_index = palette[(palette_addr & 0x3) == 0 ? 0 : (palette_addr & 0x1F)] & 0x3f;
+					uint8_t palette_index = PPU_state.palette[(palette_addr & 0x3) == 0 ? 0 : (palette_addr & 0x1F)] & 0x3f;
 					pixformat_t* pixel = &framebuffer[(size_t)256 * scanline + (dot - 1)];
 					pixel->r = palette_colors[palette_index * 3 + 0];
 					pixel->g = palette_colors[palette_index * 3 + 1];

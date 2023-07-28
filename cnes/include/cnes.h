@@ -1,15 +1,7 @@
 #ifndef _CNES_H_
 #define _CNES_H_
 
-typedef struct {
-	const char* data;
-	char* ptr;
-	size_t length;
-} fakefile_t;
-
-#define FAKE_SEEK_SET 0
-#define FAKE_SEEK_CUR 1
-#define FAKE_SEEK_END 2
+#include "../stream.h"
 
 typedef struct {
 	uint8_t r;
@@ -25,5 +17,8 @@ int load_ines(const char* data);
 void free_ines();
 void reset_machine();
 void tick_frame();
+
+void save_state(void* stream, stream_writer write);
+void load_state(void* stream, stream_reader read);
 
 #endif

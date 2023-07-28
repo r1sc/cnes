@@ -21,3 +21,6 @@ extern unsigned int new_height;
 #define NES_VK_A 1
 
 void create_window();
+extern void main_reset();
+extern void main_load_state();
+extern void main_save_state();

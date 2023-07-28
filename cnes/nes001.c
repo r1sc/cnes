@@ -15,12 +15,14 @@ ines_t ines = { 0 };
 bool rom_loaded = false;
 
 cart_reset cartridge_reset;
+cart_save_state cartridge_save_state;
+cart_load_state cartridge_load_state;
 bus_read_t cartridge_cpuRead;
 bus_write_t cartridge_cpuWrite;
 bus_read_t cartridge_ppuRead;
 bus_write_t cartridge_ppuWrite;
 
-static uint8_t ciram[2048];
+uint8_t ciram[2048];
 static uint8_t cpuram[2048];
 static uint8_t controller_status[2] = { 0, 0 };
 
@@ -162,18 +164,24 @@ int load_ines(const char* data) {
 
 	if (ines.mapper_number == 0) {
 		cartridge_reset = nrom_reset;
+		cartridge_save_state = nrom_save_state;
+		cartridge_load_state = nrom_load_state;
 		cartridge_cpuRead = nrom_cpuRead;
 		cartridge_cpuWrite = nrom_cpuWrite;
 		cartridge_ppuRead = nrom_ppuRead;
 		cartridge_ppuWrite = nrom_ppuWrite;
 	} else if (ines.mapper_number == 1) {
 		cartridge_reset = mmc1_reset;
+		cartridge_save_state = mmc1_save_state;
+		cartridge_load_state = mmc1_load_state;
 		cartridge_cpuRead = mmc1_cpuRead;
 		cartridge_cpuWrite = mmc1_cpuWrite;
 		cartridge_ppuRead = mmc1_ppuRead;
 		cartridge_ppuWrite = mmc1_ppuWrite;
 	} else if (ines.mapper_number == 2) {
 		cartridge_reset = unrom_reset;
+		cartridge_save_state = unrom_save_state;
+		cartridge_load_state = unrom_load_state;
 		cartridge_cpuRead = unrom_cpuRead;
 		cartridge_cpuWrite = unrom_cpuWrite;
 		cartridge_ppuRead = unrom_ppuRead;
@@ -186,4 +194,36 @@ int load_ines(const char* data) {
 	reset_machine();
 
 	return 0;
+}
+
+void save_state(void* stream, stream_writer write) {
+	write(cpuram, sizeof(cpuram), 1, stream);
+	write(ciram, sizeof(ciram), 1, stream);
+	write(&PPU_state, sizeof(PPU_state), 1, stream);
+	cartridge_save_state(stream, write);
+	if (ines.is_8k_chr_ram) {
+		write(ines.chr_rom, 8192, sizeof(uint8_t), stream);
+	}
+
+	write(&pc, sizeof(pc), 1, stream);
+	write(&sp, sizeof(sp), 1, stream);
+	write(&a, sizeof(a), 1, stream);
+	write(&x, sizeof(x), 1, stream);
+	write(&y, sizeof(y), 1, stream);
+}
+
+void load_state(void* stream, stream_reader read) {
+	read(cpuram, sizeof(cpuram), 1, stream);
+	read(ciram, sizeof(ciram), 1, stream);
+	read(&PPU_state, sizeof(PPU_state), 1, stream);
+	cartridge_load_state(stream, read);
+	if (ines.is_8k_chr_ram) {
+		read(ines.chr_rom, 8192, sizeof(uint8_t), stream);
+	}
+
+	read(&pc, sizeof(pc), 1, stream);
+	read(&sp, sizeof(sp), 1, stream);
+	read(&a, sizeof(a), 1, stream);
+	read(&x, sizeof(x), 1, stream);
+	read(&y, sizeof(y), 1, stream);
 }

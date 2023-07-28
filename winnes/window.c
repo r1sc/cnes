@@ -1,7 +1,5 @@
 #include <Windows.h>
 #include "window.h"
-#include <cnes.h>
-
 #include "resource.h"
 
 HWND hwnd;
@@ -77,16 +75,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 				}
 				break;
 				case COMMAND_RESET:
-					reset_machine();
+					main_reset();
 					break;
 				case COMMAND_ABOUT:
 					MessageBox(hwnd, "WinNES 0.1 by r1sc 2023\n\nSupported mappers:\nNROM\nUNROM\nMMC1", "About WinNES", MB_ICONINFORMATION);
 					break;
 				case COMMAND_SAVE_STATE:
-					//save_state();
+					main_save_state();
 					break;
 				case COMMAND_RESTORE_STATE:
-					//restore_state();
+					main_load_state();
 					break;
 				case COMMAND_TOGGLE_JOY:
 
