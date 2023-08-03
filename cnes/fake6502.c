@@ -921,12 +921,6 @@ void irq6502() {
 
 size_t total_steps_6502 = 0;
 void step6502() {
-	if (total_steps_6502 == 56648) {
-		int hej = 12;
-	}
-	if (pc == 0xC147) {
-		int hej = 2;
-	}
 	opcode = read6502(pc++);
 	status |= FLAG_CONSTANT;
 	total_steps_6502++;
