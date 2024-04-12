@@ -3,6 +3,69 @@
 #include <stdint.h>
 #include <cnes.h>
 
+#include <Xinput.h>
+
+void poll_xinput_joy(DWORD joystick_id) {
+	XINPUT_STATE state = { 0 };
+	if (XInputGetState(joystick_id, &state) == ERROR_SUCCESS) {
+		if (state.Gamepad.sThumbLX == -32768) {
+			buttons_down[joystick_id] |= 1 << 6;
+		}
+		else {
+			buttons_down[joystick_id] &= ~(1 << 6);
+		}
+
+		if (state.Gamepad.sThumbLX == 32767) {
+			buttons_down[joystick_id] |= 1 << 7;
+		}
+		else {
+			buttons_down[joystick_id] &= ~(1 << 7);
+		}
+
+		if (state.Gamepad.sThumbLY == 32767) {
+			buttons_down[joystick_id] |= 1 << 4;
+		}
+		else {
+			buttons_down[joystick_id] &= ~(1 << 4);
+		}
+
+		if (state.Gamepad.sThumbLY == -32768) {
+			buttons_down[joystick_id] |= 1 << 5;
+		}
+		else {
+			buttons_down[joystick_id] &= ~(1 << 5);
+		}
+
+		if (state.Gamepad.wButtons & 0x1000) {
+			buttons_down[joystick_id] |= (1 << 0);
+		}
+		else {
+			buttons_down[joystick_id] &= ~(1 << 0);
+		}
+
+		if (state.Gamepad.wButtons & 0x4000) {
+			buttons_down[joystick_id] |= (1 << 1);
+		}
+		else {
+			buttons_down[joystick_id] &= ~(1 << 1);
+		}
+
+		if (state.Gamepad.wButtons & 32) {
+			buttons_down[joystick_id] |= (1 << 2);
+		}
+		else {
+			buttons_down[joystick_id] &= ~(1 << 2);
+		}
+
+		if (state.Gamepad.wButtons & 16) {
+			buttons_down[joystick_id] |= (1 << 3);
+		}
+		else {
+			buttons_down[joystick_id] &= ~(1 << 3);
+		}
+	}
+}
+
 JOYINFOEX joyInfo = { 
 	.dwSize = sizeof(JOYINFOEX), 
 	.dwFlags = JOY_RETURNBUTTONS | JOY_RETURNPOV
@@ -14,7 +77,7 @@ DWORD last_dwButtons[2] = { 0,0 };
 void poll_joystick(uint8_t joystick_id) {
 	joyGetPosEx((UINT)joystick_id, &joyInfo);
 
-	DWORD dwPOV = joyInfo.dwPOV;
+	DWORD dwPOV = joyInfo.dwXpos;
 
 	if (last_dwPOV[joystick_id] != dwPOV) {
 		last_dwPOV[joystick_id] = dwPOV;

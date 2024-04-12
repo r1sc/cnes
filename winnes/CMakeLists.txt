@@ -15,4 +15,4 @@ add_executable (winnes WIN32
 
 set_source_files_properties(winres.rc PROPERTIES LANGUAGE RC)
 
-target_link_libraries(winnes cnes opengl32.lib winmm.lib)
+target_link_libraries(winnes cnes opengl32.lib winmm.lib Xinput.lib)

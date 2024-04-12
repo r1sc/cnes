@@ -15,6 +15,7 @@
 bool running = true;
 static HGLRC ourOpenGLRenderingContext;
 extern void poll_joystick(uint8_t joystick_id);
+extern void poll_xinput_joy(DWORD joystick_id);
 
 bool joystick_enabled = false;
 
@@ -235,7 +236,6 @@ DWORD WINAPI render_thread(void* param) {
 
 	waveout_initialize(SAMPLE_RATE, BUFFER_LEN);
 
-
 	QueryPerformanceCounter(&last);
 	QueryPerformanceCounter(&now);
 
@@ -261,7 +261,8 @@ DWORD WINAPI render_thread(void* param) {
 		}
 
 		if (accum >= dt_cps) {
-			//poll_joystick(0);
+			poll_xinput_joy(0);
+			poll_xinput_joy(1);
 
 			while (accum >= dt_cps) {
 				tick_frame();
@@ -313,7 +314,7 @@ void main_load_state() {
 	sprintf(state_path, "%s.sav", loaded_path);
 
 	FILE* f = fopen(state_path, "rb");
-	load_state((void*)f, fread);
+	load_state((void*)f, (stream_reader)fread);
 	fclose(f);
 }
 
@@ -324,7 +325,7 @@ void main_save_state() {
 	sprintf(state_path, "%s.sav", loaded_path);
 
 	FILE* f = fopen(state_path, "wb");
-	save_state((void*)f, fwrite);
+	save_state((void*)f, (stream_writer)fwrite);
 	fclose(f);
 }
 
@@ -363,7 +364,7 @@ int APIENTRY WinMain(
 	int       nShowCmd
 ) {
 	
-	load_ines_from_file("roms/megaman2.nes");
+	load_ines_from_file("roms/smb.nes");
 	create_window();
 
 	HANDLE threadId = CreateThread(NULL, 0, render_thread, NULL, 0, NULL);

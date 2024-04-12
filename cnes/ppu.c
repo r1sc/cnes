@@ -209,18 +209,18 @@ void cpu_ppu_bus_write(uint8_t address, uint8_t value) {
 }
 
 
-inline void nametable_fetch() {
+static inline void nametable_fetch() {
 	next_tile = cartridge_ppuRead(0x2000 | (PPU_state.V.value & 0x0FFF));
 }
 
-inline void attribute_fetch() {
+static inline void attribute_fetch() {
 	next_attribute = cartridge_ppuRead(0x23C0 | (PPU_state.V.value & 0x0C00) | ((PPU_state.V.value >> 4) & 0x38) | ((PPU_state.V.value >> 2) & 0x07));
 	if (PPU_state.V.coarse_y_scroll & 2) next_attribute >>= 4;
 	if (PPU_state.V.coarse_x_scroll & 2) next_attribute >>= 2;
 	next_attribute &= 0b11;
 }
 
-inline void bg_lsb_fetch() {
+static inline void bg_lsb_fetch() {
 	nametable_address.fine_y_offset = PPU_state.V.fine_y_scroll;
 	nametable_address.bit_plane = 0;
 	nametable_address.tile_lo = next_tile & 0xF;
@@ -229,12 +229,12 @@ inline void bg_lsb_fetch() {
 	next_pattern_lsb = cartridge_ppuRead(nametable_address.value);
 }
 
-inline void bg_msb_fetch() {
+static inline void bg_msb_fetch() {
 	nametable_address.bit_plane = 1;
 	next_pattern_msb = cartridge_ppuRead(nametable_address.value);
 }
 
-void inc_horiz() {
+static void inc_horiz() {
 	if (!PPUMASK.show_background)
 		return;
 
@@ -246,7 +246,7 @@ void inc_horiz() {
 	}
 }
 
-void inc_vert() {
+static void inc_vert() {
 	if (!PPUMASK.show_background)
 		return;
 
@@ -265,7 +265,7 @@ void inc_vert() {
 	}
 }
 
-inline void load_shifters() {
+static inline void load_shifters() {
 	pattern_plane_0 |= next_pattern_lsb;
 	pattern_plane_1 |= next_pattern_msb;
 
