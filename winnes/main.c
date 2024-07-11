@@ -364,7 +364,7 @@ int APIENTRY WinMain(
 	int       nShowCmd
 ) {
 	
-	load_ines_from_file("roms/smb.nes");
+	load_ines_from_file("roms/megaman2.nes");
 	create_window();
 
 	HANDLE threadId = CreateThread(NULL, 0, render_thread, NULL, 0, NULL);
