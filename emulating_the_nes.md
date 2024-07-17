@@ -22,13 +22,13 @@ output sample.
 From this we can calculate the frequency at which the APU runs, or its *sample rate*.
 We know that the PPU makes 262 scanlines, each consisting of 340 dots. In one second it does this 60 times.
 
-> The PAL nes does it 50 times per second, but has a more scanlines, we'll just consider the NTSC NES for now.
+> The PAL nes does it 50 times per second, but has more scanlines, we'll just consider the NTSC NES for now.
 
 The frequency of the PPU is thus, 262 scanlines * 340 dots * 60 frames/sec = 5 344 800 Hz, or ~5,34 Mhz.
 Now since the APU runs at 1/6th of the speed of the PPU, the APU has a frequency of 890 800 Hz.
 
 This sample rate is probably too high for your soundcard to handle, so we need to downsample.
-In my emulator I considered a different ways.
+In my emulator I considered a few different ways.
 
 > Some sources claim that the sample rate of the APU is 44100 Hz. This is just plain wrong and a misunderstanding
 of what is what. Other sources claim that the sample rate is 1,8 Mhz. I don't know how they come up with this

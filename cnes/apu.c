@@ -57,7 +57,7 @@ static void clock_envelope(envelope_t* envelope, bool loop_flag) {
 	}
 }
 
-uint8_t envelope_get_volume(envelope_t* envelope) {
+static uint8_t envelope_get_volume(envelope_t* envelope) {
 	return envelope->constant_volume ? (uint8_t)envelope->timer.reload : envelope->decay_level;
 }
 

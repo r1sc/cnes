@@ -1,11 +1,12 @@
 #include <Windows.h>
 #include "window.h"
 #include "resource.h"
+#include <cnes.h>
 
-HWND hwnd;
+//HWND hwnd;
 
-unsigned int keymap[16] = { 'S', 'A', 'Q', 'W', VK_UP, VK_DOWN, VK_LEFT,  VK_RIGHT, 'L', 'K', 'I', 'O', 'T', 'G', 'F', 'H'};
-uint8_t buttons_down[2] = { 0, 0};
+unsigned int keymap[16] = { 'S', 'A', 'Q', 'W', VK_UP, VK_DOWN, VK_LEFT,  VK_RIGHT, 'L', 'K', 'I', 'O', 'T', 'G', 'F', 'H' };
+
 
 HMENU menu;
 
@@ -23,7 +24,9 @@ unsigned int new_height;
 
 extern void load_ines_from_file(const char* path);
 
-LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
+static LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
+	Window* self = (Window*)GetWindowLongPtr(hWnd, GWLP_USERDATA);
+
 	switch (message) {
 		case WM_CREATE:
 		{
@@ -75,16 +78,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 				}
 				break;
 				case COMMAND_RESET:
-					main_reset();
+					//main_reset();
+					self->onReset();
 					break;
 				case COMMAND_ABOUT:
-					MessageBox(hwnd, "WinNES 0.1 by r1sc 2023\n\nSupported mappers:\nNROM\nUNROM\nMMC1", "About WinNES", MB_ICONINFORMATION);
+					MessageBox(hWnd, "WinNES 0.1 by r1sc 2023\n\nSupported mappers:\nNROM\nUNROM\nMMC1", "About WinNES", MB_ICONINFORMATION);
 					break;
 				case COMMAND_SAVE_STATE:
-					main_save_state();
+					self->onSaveState();
+					//main_save_state();
 					break;
 				case COMMAND_RESTORE_STATE:
-					main_load_state();
+					self->onLoadState();
+					//main_load_state();
 					break;
 				case COMMAND_TOGGLE_JOY:
 
@@ -135,7 +141,41 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 	return 0;
 }
 
-void create_window() {
+//void create_window() {
+//	HINSTANCE hInstance = GetModuleHandleA(NULL);
+//	WNDCLASS wc = { 0 };
+//	wc.lpfnWndProc = WndProc;
+//	wc.hInstance = hInstance;
+//	wc.hbrBackground = (HBRUSH)(COLOR_BACKGROUND);
+//	wc.lpszClassName = "WinNES";
+//	wc.style = CS_OWNDC;
+//	wc.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_ICON1));
+//	if (!RegisterClass(&wc)) {
+//		exit(1);
+//		return;
+//	}
+//
+//	RECT rect = { 0, 0, 512, 512 };
+//	AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, true);
+//	LONG width = rect.right - rect.left;
+//	LONG height = rect.bottom - rect.top;
+//
+//	hwnd = CreateWindow(
+//		wc.lpszClassName,
+//		"WinNES",
+//		WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+//		GetSystemMetrics(SM_CXSCREEN) / 2 - width / 2,
+//		GetSystemMetrics(SM_CYSCREEN) / 2 - height / 2,
+//		width, height, 0, 0, hInstance, 0);
+//}
+
+
+Window::Window(std::function<void()> onReset,
+	std::function<void()> onLoadState,
+	std::function<void()> onSaveState)
+	: onReset(onReset),
+	onLoadState(onLoadState),
+	onSaveState(onSaveState) {
 	HINSTANCE hInstance = GetModuleHandleA(NULL);
 	WNDCLASS wc = { 0 };
 	wc.lpfnWndProc = WndProc;
@@ -145,8 +185,7 @@ void create_window() {
 	wc.style = CS_OWNDC;
 	wc.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_ICON1));
 	if (!RegisterClass(&wc)) {
-		exit(1);
-		return;
+		throw "Cannot register class";
 	}
 
 	RECT rect = { 0, 0, 512, 512 };
@@ -161,4 +200,6 @@ void create_window() {
 		GetSystemMetrics(SM_CXSCREEN) / 2 - width / 2,
 		GetSystemMetrics(SM_CYSCREEN) / 2 - height / 2,
 		width, height, 0, 0, hInstance, 0);
+
+	SetWindowLongPtr(hwnd, GWLP_USERDATA, (LONG_PTR)this);
 }

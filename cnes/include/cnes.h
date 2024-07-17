@@ -3,22 +3,30 @@
 
 #include "../stream.h"
 
-typedef struct {
-	uint8_t r;
-	uint8_t g;
-	uint8_t b;
-} pixformat_t;
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-extern pixformat_t framebuffer[256 * 240];
-extern uint8_t buttons_down[2];
-extern void write_audio_sample(int scanline, int16_t sample);
+	typedef struct {
+		uint8_t r;
+		uint8_t g;
+		uint8_t b;
+	} pixformat_t;
 
-int load_ines(const char* data);
-void free_ines();
-void reset_machine();
-void tick_frame();
+	extern pixformat_t framebuffer[256 * 240];
+	extern uint8_t buttons_down[2];
+	extern void write_audio_sample(int scanline, int16_t sample);
+	extern uint8_t* get_8k_chr_ram(uint8_t num_8k_chunks);
 
-void save_state(void* stream, stream_writer write);
-void load_state(void* stream, stream_reader read);
+	int load_ines(const char* data);
+	void reset_machine();
+	void tick_frame();
+
+	void save_state(void* stream, stream_writer write);
+	void load_state(void* stream, stream_reader read);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

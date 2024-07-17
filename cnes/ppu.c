@@ -6,56 +6,6 @@
 #include "fake6502.h"
 #include "include/cnes.h"
 
-static struct OAMEntry_t {
-	uint8_t y;
-	uint8_t tile_index;
-	uint8_t attributes;
-	uint8_t x;
-} OAM[64];
-
-static union {
-	struct {
-		unsigned int nametable_address : 2;
-		unsigned int vram_address_increment : 1;
-		unsigned int sprite_pattern_table_address : 1;
-		unsigned int background_pattern_table_address : 1;
-		unsigned int sprite_size : 1;
-		unsigned int ppu_master_slave : 1;
-		unsigned int gen_nmi_vblank : 1;
-	};
-	uint8_t value;
-} PPUCTRL = { 0 };
-
-static union {
-	struct {
-		unsigned int greyscale : 1;
-		unsigned int show_background_left : 1;
-		unsigned int show_sprites_left : 1;
-		unsigned int show_background : 1;
-		unsigned int show_sprites : 1;
-
-		unsigned int emphasize_red : 1;
-		unsigned int emphasize_green : 1;
-		unsigned int emphasize_blue : 1;
-	};
-	uint8_t value;
-} PPUMASK = { 0 };
-
-static uint8_t OAMADDR;
-
-static bool PPUADDR_LATCH = false;
-
-static union {
-	struct {
-		unsigned int ppu_open_bus : 5;
-		unsigned int sprite_overflow : 1;
-		unsigned int sprite_0_hit : 1;
-		unsigned int vertical_blank_started : 1;
-	};
-	uint8_t value;
-} PPUSTATUS = { 0 };
-
-
 typedef union {
 	struct {
 		unsigned int fine_y_offset : 3;
@@ -89,11 +39,12 @@ void ppu_reset() {
 	for (size_t i = 0; i < 32; i++) {
 		PPU_state.palette[i] = 0;
 	}
-	PPUCTRL.value = 0;
-	PPUMASK.value = 0;
-	PPUSTATUS.value = 0;
-	OAMADDR = 0;
-	PPUADDR_LATCH = false;
+
+	PPU_state.oam_address = 0;
+	PPU_state.address_latch = false;
+	PPU_state.status.value = 0;
+	PPU_state.mask.value = 0;
+	PPU_state.control.value = 0;
 	PPU_state.fine_x_scroll = 0;
 	PPU_state.V.value = 0;
 	PPU_state.T.value = 0;
@@ -144,12 +95,12 @@ uint8_t cpu_ppu_bus_read(uint8_t address) {
 
 	switch (address) {
 		case 2:
-			value = PPUSTATUS.value;
-			PPUSTATUS.vertical_blank_started = 0;
-			PPUADDR_LATCH = false;
+			value = PPU_state.status.value;
+			PPU_state.status.vertical_blank_started = 0;
+			PPU_state.address_latch = false;
 			break;
 		case 4:
-			value = ((uint8_t*)OAM)[OAMADDR];
+			value = ((uint8_t*)PPU_state.OAM)[PPU_state.oam_address];
 			break;
 		case 7:
 			value = PPU_state.ppudata_buffer;
@@ -159,7 +110,7 @@ uint8_t cpu_ppu_bus_read(uint8_t address) {
 				value = PPU_state.ppudata_buffer; // Do not delay palette reads
 			}
 
-			PPU_state.V.value += (PPUCTRL.vram_address_increment ? 32 : 1);
+			PPU_state.V.value += (PPU_state.control.vram_address_increment ? 32 : 1);
 			break;
 	}
 
@@ -169,41 +120,41 @@ uint8_t cpu_ppu_bus_read(uint8_t address) {
 void cpu_ppu_bus_write(uint8_t address, uint8_t value) {
 	switch (address) {
 		case 0:
-			PPUCTRL.value = value;
+			PPU_state.control.value = value;
 			PPU_state.T.horizontal_nametable = value & 1;
 			PPU_state.T.vertical_nametable = (value >> 1) & 1;
 			break;
 		case 1:
-			PPUMASK.value = value;
+			PPU_state.mask.value = value;
 			break;
 		case 3:
-			OAMADDR = value;
+			PPU_state.oam_address = value;
 			break;
 		case 4:
-			((uint8_t*)OAM)[OAMADDR++] = value;
+			((uint8_t*)PPU_state.OAM)[PPU_state.oam_address++] = value;
 			break;
 		case 5:
-			if (PPUADDR_LATCH) {
+			if (PPU_state.address_latch) {
 				PPU_state.T.coarse_y_scroll = (value >> 3) & 0b11111;
 				PPU_state.T.fine_y_scroll = value & 0b111;
 			} else {
 				PPU_state.T.coarse_x_scroll = (value >> 3) & 0b11111;
 				PPU_state.fine_x_scroll = value & 0b111;
 			}
-			PPUADDR_LATCH = !PPUADDR_LATCH;
+			PPU_state.address_latch = !PPU_state.address_latch;
 			break;
 		case 6:
-			if (PPUADDR_LATCH) {
+			if (PPU_state.address_latch) {
 				PPU_state.T.value = (PPU_state.T.value & 0xFF00) | value;
 				PPU_state.V.value = PPU_state.T.value;
 			} else {
 				PPU_state.T.value = ((((uint16_t)value & 0x7F) << 8) | (PPU_state.T.value & 0xFF)) & 0x7FFF;
 			}
-			PPUADDR_LATCH = !PPUADDR_LATCH;
+			PPU_state.address_latch = !PPU_state.address_latch;
 			break;
 		case 7:
 			ppu_internal_bus_write(PPU_state.V.value, value);
-			PPU_state.V.value += (PPUCTRL.vram_address_increment ? 32 : 1);
+			PPU_state.V.value += (PPU_state.control.vram_address_increment ? 32 : 1);
 			break;
 	}
 }
@@ -225,7 +176,7 @@ static inline void bg_lsb_fetch() {
 	nametable_address.bit_plane = 0;
 	nametable_address.tile_lo = next_tile & 0xF;
 	nametable_address.tile_hi = (next_tile >> 4) & 0xF;
-	nametable_address.pattern_table_half = PPUCTRL.background_pattern_table_address;
+	nametable_address.pattern_table_half = PPU_state.control.background_pattern_table_address;
 	next_pattern_lsb = cartridge_ppuRead(nametable_address.value);
 }
 
@@ -234,8 +185,8 @@ static inline void bg_msb_fetch() {
 	next_pattern_msb = cartridge_ppuRead(nametable_address.value);
 }
 
-static void inc_horiz() {
-	if (!PPUMASK.show_background)
+static inline void inc_horiz() {
+	if (!PPU_state.mask.show_background)
 		return;
 
 	if (PPU_state.V.coarse_x_scroll == 31) {
@@ -246,8 +197,8 @@ static void inc_horiz() {
 	}
 }
 
-static void inc_vert() {
-	if (!PPUMASK.show_background)
+static inline void inc_vert() {
+	if (!PPU_state.mask.show_background)
 		return;
 
 	if (PPU_state.V.fine_y_scroll < 7) {
@@ -299,13 +250,13 @@ void tick_frame() {
 
 			if (scanline <= 239) {
 				if (scanline == -1 && dot == 1) {
-					PPUSTATUS.vertical_blank_started = 0;
-					PPUSTATUS.sprite_overflow = 0;
-					PPUSTATUS.sprite_0_hit = 0;
+					PPU_state.status.vertical_blank_started = 0;
+					PPU_state.status.sprite_overflow = 0;
+					PPU_state.status.sprite_0_hit = 0;
 				}
 
 				if ((dot >= 2 && dot < 258) || (dot >= 321 && dot < 338)) {
-					if (PPUMASK.show_background) {
+					if (PPU_state.mask.show_background) {
 						pattern_plane_0 <<= 1;
 						pattern_plane_1 <<= 1;
 						attrib_0 <<= 1;
@@ -338,12 +289,12 @@ void tick_frame() {
 				} else if (dot == 257) {
 					load_shifters();
 
-					if (PPUMASK.show_background || PPUMASK.show_sprites) {
+					if (PPU_state.mask.show_background || PPU_state.mask.show_sprites) {
 						PPU_state.V.horizontal_nametable = PPU_state.T.horizontal_nametable;
 						PPU_state.V.coarse_x_scroll = PPU_state.T.coarse_x_scroll;
 					}
 
-					if (PPUMASK.show_sprites) {
+					if (PPU_state.mask.show_sprites) {
 						for (size_t i = 0; i < 8; i++) {
 							temp_oam[i].x = 0xFF;
 							temp_oam[i].y = 0xFF;
@@ -353,18 +304,18 @@ void tick_frame() {
 
 						num_sprites_on_row = 0;
 
-						if (PPUMASK.show_sprites) {
+						if (PPU_state.mask.show_sprites) {
 							for (size_t i = 0; i < 64; i++) {
-								int delta_y = scanline - (int)OAM[i].y;
-								if (delta_y >= 0 && (PPUCTRL.sprite_size == 0 ? delta_y < 8 : delta_y < 16)) {
+								int delta_y = scanline - (int)PPU_state.OAM[i].y;
+								if (delta_y >= 0 && (PPU_state.control.sprite_size == 0 ? delta_y < 8 : delta_y < 16)) {
 									if (num_sprites_on_row < 8) {
-										temp_oam[num_sprites_on_row].y = OAM[i].y;
-										temp_oam[num_sprites_on_row].tile_index = OAM[i].tile_index;
-										temp_oam[num_sprites_on_row].attributes = OAM[i].attributes;
-										temp_oam[num_sprites_on_row].x = OAM[i].x;
+										temp_oam[num_sprites_on_row].y = PPU_state.OAM[i].y;
+										temp_oam[num_sprites_on_row].tile_index = PPU_state.OAM[i].tile_index;
+										temp_oam[num_sprites_on_row].attributes = PPU_state.OAM[i].attributes;
+										temp_oam[num_sprites_on_row].x = PPU_state.OAM[i].x;
 										num_sprites_on_row++;
 										if (num_sprites_on_row == 8) {
-											PPUSTATUS.sprite_overflow = 1;
+											PPU_state.status.sprite_overflow = 1;
 										}
 									}
 								}
@@ -375,9 +326,9 @@ void tick_frame() {
 					nametable_fetch();
 				} else if (dot == 340) {
 					nametable_fetch();
-					if (PPUMASK.show_sprites) {
+					if (PPU_state.mask.show_sprites) {
 						for (size_t i = 0; i < num_sprites_on_row; i++) {
-							if (PPUCTRL.sprite_size) {
+							if (PPU_state.control.sprite_size) {
 								// Tall sprites
 
 								bool flipped_y = (temp_oam[i].attributes & 0x80) != 0;
@@ -410,7 +361,7 @@ void tick_frame() {
 								nametable_address.bit_plane = 0;
 								nametable_address.tile_lo = temp_oam[i].tile_index & 0xF;
 								nametable_address.tile_hi = (temp_oam[i].tile_index >> 4) & 0xF;
-								nametable_address.pattern_table_half = PPUCTRL.sprite_pattern_table_address;
+								nametable_address.pattern_table_half = PPU_state.control.sprite_pattern_table_address;
 							}
 
 							sprite_lsb[i] = cartridge_ppuRead(nametable_address.value);
@@ -420,7 +371,7 @@ void tick_frame() {
 					}
 				}
 
-				if (PPUMASK.show_background && scanline == -1 && dot >= 280 && dot <= 304) {
+				if (PPU_state.mask.show_background && scanline == -1 && dot >= 280 && dot <= 304) {
 					PPU_state.V.coarse_y_scroll = PPU_state.T.coarse_y_scroll;
 					PPU_state.V.fine_y_scroll = PPU_state.T.fine_y_scroll;
 					PPU_state.V.vertical_nametable = PPU_state.T.vertical_nametable;
@@ -430,7 +381,7 @@ void tick_frame() {
 					uint8_t bg_pixel = 0;
 					uint8_t bg_palette = 0;
 
-					if (PPUMASK.show_background) {
+					if (PPU_state.mask.show_background) {
 						uint16_t bit = 0x8000 >> PPU_state.fine_x_scroll;
 
 						uint8_t lo_bit = (pattern_plane_0 & bit) ? 1 : 0;
@@ -446,7 +397,7 @@ void tick_frame() {
 					uint8_t sprite_pixel = 0;
 					uint8_t sprite_palette = 0;
 
-					if (PPUMASK.show_sprites) {
+					if (PPU_state.mask.show_sprites) {
 						for (int sprite_n = 0; sprite_n < num_sprites_on_row; sprite_n++) {
 							if (temp_oam[sprite_n].x == 0) {
 								bool flipped_x = (temp_oam[sprite_n].attributes & 0x40) != 0;
@@ -457,8 +408,8 @@ void tick_frame() {
 
 									if (pix != 0) {
 										first_found = sprite_n;
-										if (sprite_n == 0 && bg_pixel != 0 && temp_oam[0].y == OAM[0].y) {
-											PPUSTATUS.sprite_0_hit = 1;
+										if (sprite_n == 0 && bg_pixel != 0 && temp_oam[0].y == PPU_state.OAM[0].y) {
+											PPU_state.status.sprite_0_hit = 1;
 										}
 
 										sprite_pixel = pix;
@@ -483,7 +434,7 @@ void tick_frame() {
 					uint8_t output_pixel = bg_pixel;
 					uint8_t output_palette = bg_palette;
 
-					if (PPUMASK.show_sprites) {
+					if (PPU_state.mask.show_sprites) {
 						if (bg_pixel == 0 && sprite_pixel != 0) {
 							output_pixel = sprite_pixel;
 							output_palette = sprite_palette;
@@ -506,8 +457,8 @@ void tick_frame() {
 					pixel->b = palette_colors[palette_index * 3 + 2];
 				}
 			} else if (scanline == 241 && dot == 1) {
-				PPUSTATUS.vertical_blank_started = 1;
-				if (PPUCTRL.gen_nmi_vblank) {
+				PPU_state.status.vertical_blank_started = 1;
+				if (PPU_state.control.gen_nmi_vblank) {
 					nmi6502();
 				}
 			}

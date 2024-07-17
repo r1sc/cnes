@@ -1,5 +1,4 @@
 #include <Windows.h>
-#include <stdbool.h>
 #include <stdint.h>
 #include <cnes.h>
 

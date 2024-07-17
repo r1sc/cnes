@@ -10,9 +10,11 @@
 #include "mappers/NROM.h"
 #include "mappers/UNROM.h"
 #include "mappers/MMC1.h"
+#include "mappers/MMC2.h"
 
 ines_t ines = { 0 };
 bool rom_loaded = false;
+uint8_t buttons_down[2] = { 0, 0 };
 
 cart_reset cartridge_reset;
 cart_save_state cartridge_save_state;
@@ -140,26 +142,11 @@ void read_ines(const char* data) {
 	ines.chr_rom = (uint8_t*)(data + data_offset);
 
 	if (ines.is_8k_chr_ram) {
-		ines.chr_rom = malloc((size_t)ines.chr_rom_size_8k_chunks * 8192);
-	}
-
-	rom_loaded = true;
-}
-
-void free_ines() {
-	if (rom_loaded) {
-		rom_loaded = false;
-		if (ines.is_8k_chr_ram) {
-			free(ines.chr_rom);
-		}
+		ines.chr_rom = get_8k_chr_ram(ines.chr_rom_size_8k_chunks);
 	}
 }
 
 int load_ines(const char* data) {
-	if (rom_loaded) {
-		free_ines();
-	}
-
 	read_ines(data);
 
 	if (ines.mapper_number == 0) {
@@ -186,10 +173,19 @@ int load_ines(const char* data) {
 		cartridge_cpuWrite = unrom_cpuWrite;
 		cartridge_ppuRead = unrom_ppuRead;
 		cartridge_ppuWrite = unrom_ppuWrite;
+	} else if (ines.mapper_number == 9) {
+		cartridge_reset = mmc2_reset;
+		cartridge_save_state = mmc2_save_state;
+		cartridge_load_state = mmc2_load_state;
+		cartridge_cpuRead = mmc2_cpuRead;
+		cartridge_cpuWrite = mmc2_cpuWrite;
+		cartridge_ppuRead = mmc2_ppuRead;
+		cartridge_ppuWrite = mmc2_ppuWrite;
 	} else {
-		free_ines();
 		return 1;
 	}
+
+	rom_loaded = true;
 
 	reset_machine();
 
@@ -200,7 +196,9 @@ void save_state(void* stream, stream_writer write) {
 	write(cpuram, sizeof(cpuram), 1, stream);
 	write(ciram, sizeof(ciram), 1, stream);
 	write(&PPU_state, sizeof(PPU_state), 1, stream);
+	
 	cartridge_save_state(stream, write);
+	
 	if (ines.is_8k_chr_ram) {
 		write(ines.chr_rom, 8192, sizeof(uint8_t), stream);
 	}
@@ -216,7 +214,9 @@ void load_state(void* stream, stream_reader read) {
 	read(cpuram, sizeof(cpuram), 1, stream);
 	read(ciram, sizeof(ciram), 1, stream);
 	read(&PPU_state, sizeof(PPU_state), 1, stream);
+	
 	cartridge_load_state(stream, read);
+	
 	if (ines.is_8k_chr_ram) {
 		read(ines.chr_rom, 8192, sizeof(uint8_t), stream);
 	}

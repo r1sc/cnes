@@ -10,14 +10,17 @@
 #include "waveout.h"
 #include "glstuff/glad.h"
 #include "glstuff/wglext.h"
+#include "joystick.h"
+
 #include <crtdbg.h>
+#include <memory>
 
 bool running = true;
 static HGLRC ourOpenGLRenderingContext;
-extern void poll_joystick(uint8_t joystick_id);
-extern void poll_xinput_joy(DWORD joystick_id);
 
 bool joystick_enabled = false;
+
+static std::unique_ptr<Window> window = nullptr;
 
 GLuint load_shader(const char* shader_src, GLenum kind) {
 
@@ -38,7 +41,7 @@ GLuint load_shader(const char* shader_src, GLenum kind) {
 		GLchar infoLog[256];
 		GLsizei actualLength;
 		glGetShaderInfoLog(shader, 256, &actualLength, infoLog);
-		MessageBox(hwnd, infoLog, "Shader compile error", MB_ICONERROR);
+		MessageBox(window->hwnd, infoLog, "Shader compile error", MB_ICONERROR);
 		exit(1);
 	}
 
@@ -58,7 +61,7 @@ GLuint link_program(const char* src) {
 		GLchar infoLog[256];
 		GLsizei actualLength;
 		glGetProgramInfoLog(program, 256, &actualLength, infoLog);
-		MessageBox(hwnd, infoLog, "Shader program link error", MB_ICONERROR);
+		MessageBox(window->hwnd, infoLog, "Shader program link error", MB_ICONERROR);
 		exit(1);
 	}
 
@@ -68,7 +71,7 @@ GLuint link_program(const char* src) {
 GLuint load_shader_program_from_disk(const char* path) {
 	FILE* f;
 	if (fopen_s(&f, path, "rb")) {
-		MessageBox(hwnd, "Failed to load shader", "Error", 0);
+		MessageBox(window->hwnd, "Failed to load shader", "Error", 0);
 		exit(1);
 	}
 
@@ -140,7 +143,7 @@ DWORD WINAPI render_thread(void* param) {
 		0, 0, 0
 	};
 
-	window_dc = GetDC(hwnd);
+	window_dc = GetDC(window->hwnd);
 
 	int  letWindowsChooseThisPixelFormat;
 	letWindowsChooseThisPixelFormat = ChoosePixelFormat(window_dc, &pfd);
@@ -254,7 +257,7 @@ DWORD WINAPI render_thread(void* param) {
 			int fps = frame_counter;
 			char title[128];
 			sprintf(title, "WinNES - (%d fps = %d frames / sec)\0", fps, num_frames);
-			SetWindowText(hwnd, title);
+			SetWindowText(window->hwnd, title);
 			frame_counter = 0;
 			num_frames = 0;
 			secondacc -= one_second_cps;
@@ -303,10 +306,6 @@ DWORD WINAPI render_thread(void* param) {
 char* loaded_data = NULL;
 char loaded_path[256] = { 0 };
 
-void main_reset() {
-	reset_machine();
-}
-
 void main_load_state() {
 	if (loaded_data == NULL) return;
 
@@ -330,7 +329,6 @@ void main_save_state() {
 }
 
 void free_ines_file() {
-	free_ines();
 	if (loaded_data) {
 		free(loaded_data);
 		loaded_data = NULL;
@@ -347,14 +345,24 @@ void load_ines_from_file(const char* path) {
 	long size = ftell(f);
 	fseek(f, 0, SEEK_SET);
 
-	loaded_data = malloc((size_t)size);
+	loaded_data = (char*)malloc((size_t)size);
 	if (!loaded_data) exit(1);
 
 	fread(loaded_data, size, 1, f);
 
 	fclose(f);
 	
-	load_ines(loaded_data);
+	if (load_ines(loaded_data)) {
+		MessageBox(NULL, "Mapper not supported!", "Error", MB_ICONERROR);
+		exit(1);
+	}
+}
+
+static std::vector<uint8_t> chr_ram;
+
+extern "C" uint8_t* get_8k_chr_ram(uint8_t num_8k_chunks) {
+	chr_ram.resize(8192 * (size_t)num_8k_chunks);
+	return chr_ram.data();
 }
 
 int APIENTRY WinMain(
@@ -364,8 +372,9 @@ int APIENTRY WinMain(
 	int       nShowCmd
 ) {
 	
-	load_ines_from_file("roms/megaman2.nes");
-	create_window();
+	load_ines_from_file("roms/punchout.nes");
+	//create_window();
+	window = std::make_unique<Window>(reset_machine, main_load_state, main_save_state);
 
 	HANDLE threadId = CreateThread(NULL, 0, render_thread, NULL, 0, NULL);
 	if (!threadId) {

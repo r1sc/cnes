@@ -1,7 +1,6 @@
 cmake_minimum_required(VERSION 3.8)
-set (CMAKE_CXX_STANDARD 20)
 
-project(cnes LANGUAGES C CXX)
+project(cnes LANGUAGES C)
 
 add_library (cnes STATIC
 	"fake6502.c"	
@@ -13,6 +12,8 @@ add_library (cnes STATIC
 	"mappers/MMC1.c" 
 	"mappers/NROM.c" 
 	"mappers/UNROM.c" 
-	"stream.h")
+	"stream.h" 
+	"mappers/MMC2.h" 
+	"mappers/MMC2.c"   )
 
 target_include_directories(cnes PUBLIC include)
