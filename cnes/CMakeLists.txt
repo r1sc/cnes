@@ -14,6 +14,6 @@ add_library (cnes STATIC
 	"mappers/UNROM.c" 
 	"stream.h" 
 	"mappers/MMC2.h" 
-	"mappers/MMC2.c"   )
+	"mappers/MMC2.c"    "mappers/ColorDreams.h" "mappers/ColorDreams.c")
 
 target_include_directories(cnes PUBLIC include)

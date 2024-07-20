@@ -129,14 +129,14 @@ DWORD WINAPI render_thread(void* param) {
 		1,
 		PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER,    //Flags
 		PFD_TYPE_RGBA,        // The kind of framebuffer. RGBA or palette.
-		32,                   // Colordepth of the framebuffer.
+		24,                   // Colordepth of the framebuffer.
 		0, 0, 0, 0, 0, 0,
 		0,
 		0,
 		0,
 		0, 0, 0, 0,
-		24,                   // Number of bits for the depthbuffer
-		8,                    // Number of bits for the stencilbuffer
+		0,                   // Number of bits for the depthbuffer
+		0,                    // Number of bits for the stencilbuffer
 		0,                    // Number of Aux buffers in the framebuffer.
 		PFD_MAIN_PLANE,
 		0,
@@ -256,7 +256,7 @@ DWORD WINAPI render_thread(void* param) {
 		if (secondacc >= one_second_cps) {
 			int fps = frame_counter;
 			char title[128];
-			sprintf(title, "WinNES - (%d fps = %d frames / sec)\0", fps, num_frames);
+			sprintf_s(title, 128, "WinNES - (%d fps = %d frames / sec)\0", fps, num_frames);
 			SetWindowText(window->hwnd, title);
 			frame_counter = 0;
 			num_frames = 0;
@@ -272,12 +272,12 @@ DWORD WINAPI render_thread(void* param) {
 				num_frames++;
 				accum -= dt_cps;
 			}
-	
+
 			frame_counter++;
 			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 240, GL_RGB, GL_UNSIGNED_BYTE, framebuffer);
 			glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, NULL);
 			SwapBuffers(window_dc);
-			
+
 			if (needs_resize) {
 				glViewport(new_width / 2 - new_size / 2, new_height / 2 - new_size / 2, new_size, new_size);
 				glClear(GL_COLOR_BUFFER_BIT);
@@ -289,7 +289,7 @@ DWORD WINAPI render_thread(void* param) {
 			}
 		}
 
-		Sleep(1);	
+		Sleep(1);
 
 	}
 
@@ -310,22 +310,28 @@ void main_load_state() {
 	if (loaded_data == NULL) return;
 
 	char state_path[256];
-	sprintf(state_path, "%s.sav", loaded_path);
+	sprintf_s(state_path, sizeof(state_path), "%s.sav", loaded_path);
 
-	FILE* f = fopen(state_path, "rb");
-	load_state((void*)f, (stream_reader)fread);
-	fclose(f);
+	FILE* f;
+	fopen_s(&f, state_path, "rb");
+	if (f) {
+		load_state((void*)f, (stream_reader)fread);
+		fclose(f);
+	}
 }
 
 void main_save_state() {
 	if (loaded_data == NULL) return;
 
 	char state_path[256];
-	sprintf(state_path, "%s.sav", loaded_path);
+	sprintf_s(state_path, sizeof(state_path), "%s.sav", loaded_path);
 
-	FILE* f = fopen(state_path, "wb");
-	save_state((void*)f, (stream_writer)fwrite);
-	fclose(f);
+	FILE* f;
+	fopen_s(&f, state_path, "wb");
+	if (f) {
+		save_state((void*)f, (stream_writer)fwrite);
+		fclose(f);
+	}
 }
 
 void free_ines_file() {
@@ -336,11 +342,16 @@ void free_ines_file() {
 }
 
 void load_ines_from_file(const char* path) {
-	strcpy(loaded_path, path);
+	strcpy_s(loaded_path, sizeof(loaded_path), path);
 
 	free_ines_file();
 
-	FILE* f = fopen(path, "rb");
+	FILE* f;
+	fopen_s(&f, path, "rb");
+	if (!f) {
+		MessageBox(NULL, "Failed to read nes file", "Error", MB_ICONERROR);
+		return;
+	}
 	fseek(f, 0, SEEK_END);
 	long size = ftell(f);
 	fseek(f, 0, SEEK_SET);
@@ -351,10 +362,17 @@ void load_ines_from_file(const char* path) {
 	fread(loaded_data, size, 1, f);
 
 	fclose(f);
-	
-	if (load_ines(loaded_data)) {
-		MessageBox(NULL, "Mapper not supported!", "Error", MB_ICONERROR);
-		exit(1);
+
+	int result = load_ines(loaded_data);
+	switch (result) {
+		case CNES_LOAD_NO_ERR:
+			break;
+		case CNES_LOAD_MAPPER_NOT_SUPPORTED:
+			MessageBox(NULL, "Mapper not supported!", "Error", MB_ICONERROR);
+			[[fallthrough]];
+		default:
+			exit(1);
+			break;
 	}
 }
 
@@ -371,8 +389,8 @@ int APIENTRY WinMain(
 	LPSTR     lpCmdLine,
 	int       nShowCmd
 ) {
-	
-	load_ines_from_file("roms/punchout.nes");
+
+	load_ines_from_file("roms/smb.nes");
 	//create_window();
 	window = std::make_unique<Window>(reset_machine, main_load_state, main_save_state);
 

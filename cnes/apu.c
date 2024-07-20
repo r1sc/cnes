@@ -11,6 +11,11 @@ typedef struct {
 	uint16_t reload;
 } timer_t;
 
+static void timer_reset(timer_t* timer) {
+	timer->current = 0;
+	timer->reload = 0;
+}
+
 static bool timer_tick(timer_t* timer) {
 	if (timer->current == 0) {
 		timer->current = timer->reload;
@@ -27,6 +32,11 @@ typedef struct {
 	bool halt;
 } lengthcounter_t;
 
+static void lengthcounter_reset(lengthcounter_t* length_counter) {
+	length_counter->value = 0;
+	length_counter->halt = false;
+}
+
 static void clock_length_counter(lengthcounter_t* length_counter) {
 	if (!length_counter->halt && length_counter->value > 0) {
 		length_counter->value--;
@@ -40,6 +50,13 @@ typedef struct {
 	uint8_t decay_level;
 	bool constant_volume;
 } envelope_t;
+
+static void envelope_reset(envelope_t* envelope) {
+	envelope->start = false;
+	timer_reset(&envelope->timer);
+	envelope->decay_level = 0;
+	envelope->constant_volume = false;
+}
 
 static void clock_envelope(envelope_t* envelope, bool loop_flag) {
 	if (!envelope->start) {
@@ -82,6 +99,23 @@ typedef struct {
 	uint16_t sweep_target_period;
 
 } apu_pulse_t;
+
+static void pulse_reset(apu_pulse_t* pulse) {
+	timer_reset(&pulse->timer);
+	lengthcounter_reset(&pulse->lengthcounter);
+	pulse->sequence = 0;
+	pulse->sequencer_pos = 0;
+	pulse->current_output = 0;
+	envelope_reset(&pulse->envelope);
+
+	pulse->sweep_enabled = false;
+	pulse->sweep_divider_current = 0;
+	pulse->sweep_divider_reload = 0;
+	pulse->sweep_reload_flag = false;
+	pulse->sweep_negate = false;
+	pulse->sweep_shift_count = 0;
+	pulse->sweep_target_period = 0;
+}
 
 static uint8_t length_table[] = { 10, 254, 20,  2, 40,  4, 80,  6,
 							160,   8, 60, 10, 14, 12, 26, 14,
@@ -176,6 +210,16 @@ struct {
 	uint8_t sequencer_pos;
 } triangle = { 0 };
 
+static void triangle_reset() {
+	timer_reset(&triangle.timer);
+	lengthcounter_reset(&triangle.lengthcounter);
+	triangle.linear_counter = 0;
+	triangle.linear_counter_reload = 0;
+	triangle.linear_counter_reload_flag = false;
+	triangle.current_output = 0;
+	triangle.sequencer_pos = 0;
+}
+
 static void triangle_write_reg(uint8_t address, uint8_t value) {
 	switch (address) {
 		case 0:
@@ -229,7 +273,14 @@ static struct {
 } noise;
 
 static void noise_reset() {
+	timer_reset(&noise.timer);
+	lengthcounter_reset(&noise.lengthcounter);
+	noise.period_select = 0;
+	noise.current_output = 0;
+
 	noise.shift_reg = 1;
+	noise.mode = false;
+	envelope_reset(&noise.envelope);
 }
 
 static void noise_tick() {
@@ -446,5 +497,19 @@ void apu_tick(uint16_t scanline) {
 }
 
 void apu_reset() {
+	triangle_reset();
 	noise_reset();
+	pulse_reset(&pulse1);
+	pulse_reset(&pulse2);
+
+	apu_cycle_counter = 0;
+	five_step_mode = false;
+	interrupt_inhibit = true;
+	frame_interrupt_flag = false;
+
+	pulse1_enabled = false;
+	pulse2_enabled = false;
+	triangle_enabled = false;
+	noise_enabled = false;
+	dmc_enabled = false;
 }

@@ -3,6 +3,9 @@
 
 #include "../stream.h"
 
+#define CNES_LOAD_NO_ERR 0
+#define CNES_LOAD_MAPPER_NOT_SUPPORTED 1
+
 #ifdef __cplusplus
 extern "C" {
 #endif

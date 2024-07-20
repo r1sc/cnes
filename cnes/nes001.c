@@ -11,6 +11,7 @@
 #include "mappers/UNROM.h"
 #include "mappers/MMC1.h"
 #include "mappers/MMC2.h"
+#include "mappers/ColorDreams.h"
 
 ines_t ines = { 0 };
 bool rom_loaded = false;
@@ -181,15 +182,23 @@ int load_ines(const char* data) {
 		cartridge_cpuWrite = mmc2_cpuWrite;
 		cartridge_ppuRead = mmc2_ppuRead;
 		cartridge_ppuWrite = mmc2_ppuWrite;
+	} else if (ines.mapper_number == 11) {
+		cartridge_reset = colordreams_reset;
+		cartridge_save_state = colordreams_save_state;
+		cartridge_load_state = colordreams_load_state;
+		cartridge_cpuRead = colordreams_cpuRead;
+		cartridge_cpuWrite = colordreams_cpuWrite;
+		cartridge_ppuRead = colordreams_ppuRead;
+		cartridge_ppuWrite = colordreams_ppuWrite;
 	} else {
-		return 1;
+		return CNES_LOAD_MAPPER_NOT_SUPPORTED;
 	}
 
 	rom_loaded = true;
 
 	reset_machine();
 
-	return 0;
+	return CNES_LOAD_NO_ERR;
 }
 
 void save_state(void* stream, stream_writer write) {
