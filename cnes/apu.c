@@ -63,7 +63,7 @@ static void clock_envelope(envelope_t* envelope, bool loop_flag) {
 		if (timer_tick(&envelope->timer)) {
 			if (envelope->decay_level > 0) {
 				envelope->decay_level--;
-			} else if(loop_flag) {
+			} else if (loop_flag) {
 				envelope->decay_level = 15;
 			}
 		}
@@ -87,7 +87,7 @@ typedef struct {
 	lengthcounter_t lengthcounter;
 	uint8_t sequence;
 	uint8_t sequencer_pos;
-	uint8_t current_output;	
+	uint8_t current_output;
 	envelope_t envelope;
 
 	bool sweep_enabled;
@@ -205,7 +205,7 @@ struct {
 	lengthcounter_t lengthcounter;
 	uint16_t linear_counter;
 	uint16_t linear_counter_reload;
-	bool linear_counter_reload_flag;	
+	bool linear_counter_reload_flag;
 	uint8_t current_output;
 	uint8_t sequencer_pos;
 } triangle = { 0 };
@@ -315,6 +315,123 @@ static void noise_write_reg(uint8_t address, uint8_t value) {
 	}
 }
 
+/******** DMC ************/
+
+static struct {
+	bool irq_enabled;
+	bool loop;
+	uint8_t output_level;
+
+	timer_t timer;
+
+	bool sample_buffer_filled;
+	uint8_t sample_buffer;
+	uint16_t sample_bytes_remaining;
+	uint16_t current_address;
+	uint16_t sample_address;
+	uint16_t sample_length;
+
+	uint8_t sr;
+	uint8_t bits_remaining;
+	bool silence;
+} dmc;
+
+static uint8_t dmc_rate_table[] = { 428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106,  84,  72,  54 };
+
+static void dmc_reset() {
+	dmc.irq_enabled = false;
+	dmc.loop = false;
+	dmc.output_level = 0;
+
+	timer_reset(&dmc.timer);
+	
+	dmc.sample_buffer_filled = false;
+	dmc.sample_buffer = 0;
+	dmc.sample_bytes_remaining = 0;
+	dmc.current_address = 0;
+	dmc.sample_address = 0;
+	dmc.sample_length = 0;
+
+	dmc.sr = 0;
+	dmc.bits_remaining = 0;
+	dmc.silence = true;
+}
+
+static void dmc_tick_memory_reader() {
+	if (!dmc.sample_buffer_filled && dmc.sample_bytes_remaining > 0) {
+		// Sample buffer is empty
+		dmc.sample_buffer = read6502(dmc.current_address++);
+		dmc.sample_buffer_filled = true;
+		if (dmc.current_address == 0) { // wrapped around
+			dmc.current_address = 0x8000;
+		}
+		dmc.sample_bytes_remaining--;
+	}
+
+	if (dmc.sample_bytes_remaining == 0) {
+		if (dmc.loop) {
+			dmc.current_address = dmc.sample_address;
+			dmc.sample_bytes_remaining = dmc.sample_length;
+		} else if (dmc.irq_enabled) {
+			irq6502();
+		}
+	}
+}
+
+static void dmc_tick() {
+	dmc_tick_memory_reader();
+
+	if (timer_tick(&dmc.timer)) {
+		if (!dmc.silence) {
+			uint8_t b = dmc.sr & 1;
+			if (b == 1 && dmc.output_level <= 125) {
+				dmc.output_level += 2;
+			} else if (b == 0 && dmc.output_level >= 2) {
+				dmc.output_level -= 2;
+			}
+		}
+
+		dmc.sr >>= 1;		
+
+		if (dmc.bits_remaining == 0) {
+			dmc.bits_remaining = 8;
+			if (!dmc.sample_buffer_filled) {
+				dmc.silence = true;
+				dmc.output_level = 0;
+			} else {
+				dmc.silence = false;
+				dmc.sr = dmc.sample_buffer;
+				dmc.sample_buffer_filled = false;
+			}
+		} else {
+			dmc.bits_remaining--;
+		}
+	}
+}
+
+static void dmc_write_reg(uint8_t address, uint8_t value) {
+	switch (address) {
+		case 0:
+			dmc.irq_enabled = (value & 0x80) == 0x80;
+			dmc.loop = (value & 0x40) == 0x40;
+			dmc.timer.reload = dmc_rate_table[value & 0x0F] >> 1;
+			dmc.timer.current = dmc.timer.reload;
+			break;
+		case 1:
+			dmc.output_level = value & 0x7F;
+			break;
+		case 2:
+			dmc.sample_address = 0xC000 + (value << 6);
+			break;
+		case 3:
+			dmc.sample_length = (value << 4) + 1;
+			break;
+	}
+}
+
+
+/***** APU *****/
+
 static apu_pulse_t pulse1 = { 0 };
 static apu_pulse_t pulse2 = { 0 };
 static unsigned int apu_cycle_counter = 0;
@@ -365,18 +482,25 @@ void apu_write(uint16_t address, uint8_t value) {
 		triangle_write_reg(address & 0b11, value);
 	} else if (address >= 0x400C && address <= 0x400F) {
 		noise_write_reg(address & 0b11, value);
+	} else if(address >= 0x4010 && address <= 0x4013) {
+		dmc_write_reg(address & 0b11, value);
 	} else if (address == 0x4015) {
 		// Status
-		pulse1_enabled = value & 1;
-		pulse2_enabled = value & 2;
-		triangle_enabled = value & 4;
-		noise_enabled = value & 8;
-		dmc_enabled = value & 16;
+		pulse1_enabled = (value & 1) == 1;
+		pulse2_enabled = (value & 2) == 2;
+		triangle_enabled = (value & 4) == 4;
+		noise_enabled = (value & 8) == 8;
+		dmc_enabled = (value & 16) == 16;
 
 		if (!pulse1_enabled) pulse1.lengthcounter.value = 0;
 		if (!pulse2_enabled) pulse2.lengthcounter.value = 0;
 		if (!triangle_enabled) triangle.lengthcounter.value = 0;
 		if (!noise_enabled) noise.lengthcounter.value = 0;
+		if (!dmc_enabled) {
+			dmc.sample_bytes_remaining = 0;
+		}
+
+		dmc_tick_memory_reader();
 
 	} else if (address == 0x4017) {
 		five_step_mode = value & 0b10000000;
@@ -396,6 +520,7 @@ uint8_t apu_read(uint16_t address) {
 		uint8_t value =
 			(interrupt_inhibit ? 0x80 : 0)
 			| (frame_interrupt_flag ? 0x40 : 0)
+			| (dmc.sample_bytes_remaining > 0 ? 16 : 0)
 			| (noise.lengthcounter.value > 0 ? 8 : 0)
 			| (triangle.lengthcounter.value > 0 ? 4 : 0)
 			| (pulse2.lengthcounter.value > 0 ? 2 : 0)
@@ -468,8 +593,11 @@ void apu_tick(uint16_t scanline) {
 	if (noise_enabled) {
 		noise_tick();
 	}
+	if (dmc_enabled) {
+		dmc_tick();
+	}
 
-	int num_enabled = 4;
+	int num_enabled = 5;
 	int16_t frame_sample = 0;
 
 	if (pulse1_enabled) {
@@ -487,7 +615,10 @@ void apu_tick(uint16_t scanline) {
 	if (noise_enabled) {
 		frame_sample += (int16_t)(((int)noise.current_output * 333) - 2500);
 	}
-	
+	//if (dmc_enabled) {
+		frame_sample += (int16_t)(((int)dmc.output_level * 333) - 2500);
+	//}
+
 	if (num_enabled > 0) {
 		frame_sample /= num_enabled;
 	}
