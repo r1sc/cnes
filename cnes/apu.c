@@ -539,6 +539,9 @@ void apu_tick_triangle() {
 	}
 }
 
+static int16_t pulse_lookup_table[31];
+static int16_t tnd_lookup_table[203];
+
 void apu_tick(uint16_t scanline) {
 	switch (apu_cycle_counter) {
 		case 3728:
@@ -597,30 +600,24 @@ void apu_tick(uint16_t scanline) {
 		dmc_tick();
 	}
 
-	int16_t frame_sample = 0;
-
-	if (pulse1_enabled) {
-		frame_sample += (int16_t)(((int)pulse1.current_output * 666) - 5000);
-	}
-	if (pulse2_enabled) {
-		frame_sample += (int16_t)(((int)pulse2.current_output * 666) - 5000);
-	}
-	if (triangle_enabled) {
-		frame_sample += (int16_t)(((int)triangle.current_output * 533) - 4000);
-	}
-	if (noise_enabled) {
-		frame_sample += (int16_t)(((int)noise.current_output * 333) - 2500);
-	}
-
-	frame_sample += (int16_t)(((int)dmc.output_level * 333) - 2500);
-
-	frame_sample /= 5;
-
+	int16_t pulse_out = pulse_lookup_table[(size_t)pulse1.current_output + (size_t)pulse2.current_output];
+	int16_t tnd_out = tnd_lookup_table[3 * (size_t)triangle.current_output + 2 * (size_t)noise.current_output + (size_t)dmc.output_level];
+	int16_t frame_sample = pulse_out + tnd_out;
+	
 	write_audio_sample(scanline, frame_sample);
 	apu_cycle_counter++;
 }
 
 void apu_reset() {
+	// Generate pulse lookup table
+	for (size_t i = 0; i < 31; i++) {
+		pulse_lookup_table[i] = (int16_t)((95.52 / (8128.0 / (double)i + 100)) * INT16_MAX);
+	}
+	// Generate triangle, noise and DMC lookup table
+	for (size_t i = 0; i < 203; i++) {
+		tnd_lookup_table[i] = (int16_t)((163.67 / (24329.0 / (double)i + 100)) * INT16_MAX);
+	}
+
 	triangle_reset();
 	noise_reset();
 	pulse_reset(&pulse1);
