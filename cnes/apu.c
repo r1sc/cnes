@@ -344,7 +344,7 @@ static void dmc_reset() {
 	dmc.output_level = 0;
 
 	timer_reset(&dmc.timer);
-	
+
 	dmc.sample_buffer_filled = false;
 	dmc.sample_buffer = 0;
 	dmc.sample_bytes_remaining = 0;
@@ -391,7 +391,7 @@ static void dmc_tick() {
 			}
 		}
 
-		dmc.sr >>= 1;		
+		dmc.sr >>= 1;
 
 		if (dmc.bits_remaining == 0) {
 			dmc.bits_remaining = 8;
@@ -482,7 +482,7 @@ void apu_write(uint16_t address, uint8_t value) {
 		triangle_write_reg(address & 0b11, value);
 	} else if (address >= 0x400C && address <= 0x400F) {
 		noise_write_reg(address & 0b11, value);
-	} else if(address >= 0x4010 && address <= 0x4013) {
+	} else if (address >= 0x4010 && address <= 0x4013) {
 		dmc_write_reg(address & 0b11, value);
 	} else if (address == 0x4015) {
 		// Status
@@ -597,31 +597,24 @@ void apu_tick(uint16_t scanline) {
 		dmc_tick();
 	}
 
-	int num_enabled = 5;
 	int16_t frame_sample = 0;
 
 	if (pulse1_enabled) {
 		frame_sample += (int16_t)(((int)pulse1.current_output * 666) - 5000);
-		//num_enabled++;
 	}
 	if (pulse2_enabled) {
 		frame_sample += (int16_t)(((int)pulse2.current_output * 666) - 5000);
-		//num_enabled++;
 	}
 	if (triangle_enabled) {
 		frame_sample += (int16_t)(((int)triangle.current_output * 533) - 4000);
-		//num_enabled++;
 	}
 	if (noise_enabled) {
 		frame_sample += (int16_t)(((int)noise.current_output * 333) - 2500);
 	}
-	//if (dmc_enabled) {
-		frame_sample += (int16_t)(((int)dmc.output_level * 333) - 2500);
-	//}
 
-	if (num_enabled > 0) {
-		frame_sample /= num_enabled;
-	}
+	frame_sample += (int16_t)(((int)dmc.output_level * 333) - 2500);
+
+	frame_sample /= 5;
 
 	write_audio_sample(scanline, frame_sample);
 	apu_cycle_counter++;
