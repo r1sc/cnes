@@ -325,6 +325,9 @@ void tick_frame() {
 				} else if (dot == 338) {
 					nametable_fetch();
 				} else if (dot == 340) {
+					if (cartridge_scanline != NULL && (PPU_state.mask.show_background || PPU_state.mask.show_sprites)) {
+						cartridge_scanline();
+					}
 					nametable_fetch();
 					if (PPU_state.mask.show_sprites) {
 						for (size_t i = 0; i < num_sprites_on_row; i++) {
@@ -381,7 +384,9 @@ void tick_frame() {
 					uint8_t bg_pixel = 0;
 					uint8_t bg_palette = 0;
 
-					if (PPU_state.mask.show_background) {
+					bool show_background = PPU_state.mask.show_background && (PPU_state.mask.show_background_left || dot >= 8);
+
+					if (show_background) {
 						uint16_t bit = 0x8000 >> PPU_state.fine_x_scroll;
 
 						uint8_t lo_bit = (pattern_plane_0 & bit) ? 1 : 0;
@@ -434,7 +439,9 @@ void tick_frame() {
 					uint8_t output_pixel = bg_pixel;
 					uint8_t output_palette = bg_palette;
 
-					if (PPU_state.mask.show_sprites) {
+					bool show_sprites = PPU_state.mask.show_sprites && (PPU_state.mask.show_background_left || dot >= 8);
+
+					if (show_sprites) {
 						if (bg_pixel == 0 && sprite_pixel != 0) {
 							output_pixel = sprite_pixel;
 							output_palette = sprite_palette;

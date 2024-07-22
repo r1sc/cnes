@@ -12,6 +12,7 @@
 #include "mappers/MMC1.h"
 #include "mappers/MMC2.h"
 #include "mappers/ColorDreams.h"
+#include "mappers/MMC3.h"
 
 ines_t ines = { 0 };
 bool rom_loaded = false;
@@ -20,6 +21,7 @@ uint8_t buttons_down[2] = { 0, 0 };
 cart_reset cartridge_reset;
 cart_save_state cartridge_save_state;
 cart_load_state cartridge_load_state;
+cart_scanline cartridge_scanline;
 bus_read_t cartridge_cpuRead;
 bus_write_t cartridge_cpuWrite;
 bus_read_t cartridge_ppuRead;
@@ -150,6 +152,7 @@ void read_ines(const char* data) {
 int load_ines(const char* data) {
 	read_ines(data);
 
+	cartridge_scanline = NULL;
 	if (ines.mapper_number == 0) {
 		cartridge_reset = nrom_reset;
 		cartridge_save_state = nrom_save_state;
@@ -174,6 +177,15 @@ int load_ines(const char* data) {
 		cartridge_cpuWrite = unrom_cpuWrite;
 		cartridge_ppuRead = unrom_ppuRead;
 		cartridge_ppuWrite = unrom_ppuWrite;
+	} else if (ines.mapper_number == 4) {
+		cartridge_reset = mmc3_reset;
+		cartridge_save_state = mmc3_save_state;
+		cartridge_load_state = mmc3_load_state;
+		cartridge_cpuRead = mmc3_cpuRead;
+		cartridge_cpuWrite = mmc3_cpuWrite;
+		cartridge_ppuRead = mmc3_ppuRead;
+		cartridge_ppuWrite = mmc3_ppuWrite;
+		cartridge_scanline = mmc3_scanline;
 	} else if (ines.mapper_number == 9) {
 		cartridge_reset = mmc2_reset;
 		cartridge_save_state = mmc2_save_state;

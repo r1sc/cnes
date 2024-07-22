@@ -27,9 +27,11 @@ typedef void(*bus_write_t)(uint16_t address, uint8_t value);
 typedef void(*cart_reset)();
 typedef void(*cart_save_state)(void* stream, stream_writer write);
 typedef void(*cart_load_state)(void* stream, stream_reader read);
+typedef void(*cart_scanline)();
 
 extern bus_read_t cartridge_ppuRead;
 extern bus_write_t cartridge_ppuWrite;
+extern cart_scanline cartridge_scanline;
 
 uint8_t cpu_ppu_bus_read(uint8_t address);
 void cpu_ppu_bus_write(uint8_t address, uint8_t value);
