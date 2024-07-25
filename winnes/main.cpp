@@ -121,6 +121,7 @@ void write_audio_sample(int scanline, int16_t sample) {
 }
 
 static HDC window_dc;
+static HANDLE ines_loading_mutex;
 
 DWORD WINAPI render_thread(void* param) {
 	PIXELFORMATDESCRIPTOR pfd =
@@ -247,6 +248,8 @@ DWORD WINAPI render_thread(void* param) {
 		LONGLONG delta = now.QuadPart - last.QuadPart;
 		last = now;
 
+		WaitForSingleObject(ines_loading_mutex, INFINITE);
+
 		if (delta >= one_second_cps) {
 			delta = dt_cps;
 		}
@@ -256,7 +259,7 @@ DWORD WINAPI render_thread(void* param) {
 		if (secondacc >= one_second_cps) {
 			int fps = frame_counter;
 			char title[128];
-			sprintf_s(title, 128, "WinNES - (%d fps = %d frames / sec)\0", fps, num_frames);
+			sprintf_s(title, 128, "WinNES - (%d screen fps and %d NES frames / sec)\0", fps, num_frames);
 			SetWindowText(window->hwnd, title);
 			frame_counter = 0;
 			num_frames = 0;
@@ -288,6 +291,7 @@ DWORD WINAPI render_thread(void* param) {
 				needs_resize = false;
 			}
 		}
+		ReleaseMutex(ines_loading_mutex);
 
 		Sleep(1);
 
@@ -342,6 +346,8 @@ void free_ines_file() {
 }
 
 void load_ines_from_file(const char* path) {
+	WaitForSingleObject(ines_loading_mutex, INFINITE);
+
 	strcpy_s(loaded_path, sizeof(loaded_path), path);
 
 	free_ines_file();
@@ -374,6 +380,8 @@ void load_ines_from_file(const char* path) {
 			exit(1);
 			break;
 	}
+
+	ReleaseMutex(ines_loading_mutex);
 }
 
 static std::vector<uint8_t> chr_ram;
@@ -389,8 +397,9 @@ int APIENTRY WinMain(
 	LPSTR     lpCmdLine,
 	int       nShowCmd
 ) {
-
-	load_ines_from_file("roms/smb.nes");
+	ines_loading_mutex = CreateMutex(NULL, FALSE, NULL);
+	load_ines_from_file("roms/smb3.nes");
+	
 	//create_window();
 	window = std::make_unique<Window>(reset_machine, main_load_state, main_save_state);
 

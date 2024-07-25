@@ -134,7 +134,7 @@ static void pulse_calculate_sweep_target(apu_pulse_t* pulse) {
 	pulse->sweep_target_period = (uint16_t)target_period;
 }
 
-static void pulse_write_reg(apu_pulse_t* pulse, uint8_t address, uint8_t value) {
+static void pulse_write_reg(apu_pulse_t* pulse, uint8_t address, uint8_t value, bool enabled) {
 	switch (address) {
 		case 0:
 		{
@@ -159,11 +159,13 @@ static void pulse_write_reg(apu_pulse_t* pulse, uint8_t address, uint8_t value) 
 			//pulse_calculate_sweep_target(pulse);
 			break;
 		case 3:
-			pulse->timer.reload = (pulse->timer.reload & 0xFF) | ((value & 0b111) << 8);
-			pulse->timer.current = pulse->timer.reload;
-			pulse->lengthcounter.value = length_table[value >> 3];
-			pulse->sequencer_pos = 0; // Reset phase
-			pulse->envelope.start = true;
+			if (enabled) {
+				pulse->timer.reload = (pulse->timer.reload & 0xFF) | ((value & 0b111) << 8);
+				pulse->timer.current = pulse->timer.reload;
+				pulse->lengthcounter.value = length_table[value >> 3];
+				pulse->sequencer_pos = 0; // Reset phase
+				pulse->envelope.start = true;
+			}
 			//pulse_calculate_sweep_target(pulse);
 			break;
 	}
@@ -220,7 +222,7 @@ static void triangle_reset() {
 	triangle.sequencer_pos = 0;
 }
 
-static void triangle_write_reg(uint8_t address, uint8_t value) {
+static void triangle_write_reg(uint8_t address, uint8_t value, bool enabled) {
 	switch (address) {
 		case 0:
 			triangle.linear_counter_reload = value & 0b01111111;
@@ -230,10 +232,12 @@ static void triangle_write_reg(uint8_t address, uint8_t value) {
 			triangle.timer.reload = (triangle.timer.reload & 0x700) | value;
 			break;
 		case 3:
-			triangle.lengthcounter.value = length_table[(value & 0xF8) >> 3];
-			triangle.timer.reload = (triangle.timer.reload & 0xFF) | ((value & 0b111) << 8);
-			triangle.timer.current = triangle.timer.reload;
-			triangle.linear_counter_reload_flag = true;
+			if (enabled) {
+				triangle.lengthcounter.value = length_table[(value & 0xF8) >> 3];
+				triangle.timer.reload = (triangle.timer.reload & 0xFF) | ((value & 0b111) << 8);
+				triangle.timer.current = triangle.timer.reload;
+				triangle.linear_counter_reload_flag = true;
+			}
 			break;
 	}
 }
@@ -297,7 +301,7 @@ static void noise_tick() {
 	}
 }
 
-static void noise_write_reg(uint8_t address, uint8_t value) {
+static void noise_write_reg(uint8_t address, uint8_t value, bool enabled) {
 	switch (address) {
 		case 0:
 			noise.lengthcounter.halt = value & 0b100000;
@@ -309,8 +313,10 @@ static void noise_write_reg(uint8_t address, uint8_t value) {
 			noise.timer.current = noise.timer.reload;
 			break;
 		case 3:
-			noise.lengthcounter.value = length_table[value >> 3];
-			noise.envelope.start = true;
+			if (enabled) {
+				noise.lengthcounter.value = length_table[value >> 3];
+				noise.envelope.start = true;
+			}
 			break;
 	}
 }
@@ -334,6 +340,7 @@ static struct {
 	uint8_t sr;
 	uint8_t bits_remaining;
 	bool silence;
+	bool interrupt_flag;
 } dmc;
 
 static uint8_t dmc_rate_table[] = { 428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106,  84,  72,  54 };
@@ -355,6 +362,12 @@ static void dmc_reset() {
 	dmc.sr = 0;
 	dmc.bits_remaining = 0;
 	dmc.silence = true;
+	dmc.interrupt_flag = false;
+}
+
+static void dmc_start_sample() {
+	dmc.current_address = dmc.sample_address;
+	dmc.sample_bytes_remaining = dmc.sample_length;
 }
 
 static void dmc_tick_memory_reader() {
@@ -370,16 +383,19 @@ static void dmc_tick_memory_reader() {
 
 	if (dmc.sample_bytes_remaining == 0) {
 		if (dmc.loop) {
-			dmc.current_address = dmc.sample_address;
-			dmc.sample_bytes_remaining = dmc.sample_length;
+			dmc_start_sample();
 		} else if (dmc.irq_enabled) {
-			irq6502();
+			dmc.interrupt_flag = true;
 		}
 	}
 }
 
 static void dmc_tick() {
 	dmc_tick_memory_reader();
+
+	if (dmc.interrupt_flag) {
+		irq6502();
+	}
 
 	if (timer_tick(&dmc.timer)) {
 		if (!dmc.silence) {
@@ -414,8 +430,9 @@ static void dmc_write_reg(uint8_t address, uint8_t value) {
 		case 0:
 			dmc.irq_enabled = (value & 0x80) == 0x80;
 			dmc.loop = (value & 0x40) == 0x40;
-			dmc.timer.reload = dmc_rate_table[value & 0x0F] >> 1;
+			dmc.timer.reload = dmc_rate_table[value & 0x0F];
 			dmc.timer.current = dmc.timer.reload;
+			if (!dmc.irq_enabled) dmc.interrupt_flag = false;
 			break;
 		case 1:
 			dmc.output_level = value & 0x7F;
@@ -475,13 +492,13 @@ static void clock_envelopes() {
 
 void apu_write(uint16_t address, uint8_t value) {
 	if (address >= 0x4000 && address <= 0x4003) {
-		pulse_write_reg(&pulse1, address & 0b11, value);
+		pulse_write_reg(&pulse1, address & 0b11, value, pulse1_enabled);
 	} else if (address >= 0x4004 && address <= 0x4007) {
-		pulse_write_reg(&pulse2, address & 0b11, value);
+		pulse_write_reg(&pulse2, address & 0b11, value, pulse2_enabled);
 	} else if (address >= 0x4008 && address <= 0x400B) {
-		triangle_write_reg(address & 0b11, value);
+		triangle_write_reg(address & 0b11, value, triangle_enabled);
 	} else if (address >= 0x400C && address <= 0x400F) {
-		noise_write_reg(address & 0b11, value);
+		noise_write_reg(address & 0b11, value, noise_enabled);
 	} else if (address >= 0x4010 && address <= 0x4013) {
 		dmc_write_reg(address & 0b11, value);
 	} else if (address == 0x4015) {
@@ -492,12 +509,16 @@ void apu_write(uint16_t address, uint8_t value) {
 		noise_enabled = (value & 8) == 8;
 		dmc_enabled = (value & 16) == 16;
 
+		dmc.interrupt_flag = false;
+
 		if (!pulse1_enabled) pulse1.lengthcounter.value = 0;
 		if (!pulse2_enabled) pulse2.lengthcounter.value = 0;
 		if (!triangle_enabled) triangle.lengthcounter.value = 0;
 		if (!noise_enabled) noise.lengthcounter.value = 0;
 		if (!dmc_enabled) {
 			dmc.sample_bytes_remaining = 0;
+		} else {
+			dmc_start_sample();
 		}
 
 		dmc_tick_memory_reader();
@@ -536,6 +557,9 @@ uint8_t apu_read(uint16_t address) {
 void apu_tick_triangle() {
 	if (triangle_enabled) {
 		triangle_tick();
+	}
+	if (dmc_enabled) {
+		dmc_tick();
 	}
 }
 
@@ -595,9 +619,6 @@ void apu_tick(uint16_t scanline) {
 	}
 	if (noise_enabled) {
 		noise_tick();
-	}
-	if (dmc_enabled) {
-		dmc_tick();
 	}
 
 	int16_t pulse_out = pulse_lookup_table[(size_t)pulse1.current_output + (size_t)pulse2.current_output];

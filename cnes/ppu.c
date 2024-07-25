@@ -384,7 +384,7 @@ void tick_frame() {
 					uint8_t bg_pixel = 0;
 					uint8_t bg_palette = 0;
 
-					bool show_background = PPU_state.mask.show_background && (PPU_state.mask.show_background_left || dot >= 8);
+					bool show_background = PPU_state.mask.show_background && (PPU_state.mask.show_background_left || dot > 8);
 
 					if (show_background) {
 						uint16_t bit = 0x8000 >> PPU_state.fine_x_scroll;
@@ -439,7 +439,7 @@ void tick_frame() {
 					uint8_t output_pixel = bg_pixel;
 					uint8_t output_palette = bg_palette;
 
-					bool show_sprites = PPU_state.mask.show_sprites && (PPU_state.mask.show_background_left || dot >= 8);
+					bool show_sprites = PPU_state.mask.show_sprites && (PPU_state.mask.show_background_left || dot > 8);
 
 					if (show_sprites) {
 						if (bg_pixel == 0 && sprite_pixel != 0) {
